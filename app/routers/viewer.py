@@ -8,6 +8,7 @@ import json
 import logging
 import traceback
 from datetime import datetime
+import asyncio
 
 from app.services.webhook import (
     get_webhook_requests, get_user_config, clear_webhook_requests,
@@ -274,8 +275,10 @@ async def viewer_websocket(
 ):
     """
     WebSocket endpoint for real-time updates of the viewer
-    Uses get_db_websocket dependency to fix the 'request' parameter issue
+    Uses polling mechanism instead of change streams
     """
+    last_request_id = None
+    
     try:
         await websocket.accept()
         
@@ -297,14 +300,42 @@ async def viewer_websocket(
             "request_count": request_count
         }))
         
-        # Keep connection alive until disconnect
-        try:
-            while True:
-                data = await websocket.receive_text()
-                if data == "ping":
-                    await websocket.send_text(json.dumps({"event": "pong"}))
-        except WebSocketDisconnect:
-            logger.info(f"Viewer WebSocket disconnected for {username}")
+        # Keep connection alive and check for new requests
+        while True:
+            try:
+                # Find the most recent request
+                latest_request = await db.webhook_requests.find_one(
+                    {"username": username},
+                    sort=[("request_time", -1)]
+                )
+                
+                # Check if there's a new request
+                if latest_request and (
+                    last_request_id is None or 
+                    str(latest_request['_id']) != last_request_id
+                ):
+                    # Update last request ID
+                    last_request_id = str(latest_request['_id'])
+                    
+                    # Send new request notification
+                    await websocket.send_text(json.dumps({
+                        "event": "new_request",
+                        "method": latest_request.get('method', 'UNKNOWN'),
+                        "request_id": last_request_id
+                    }))
+                
+                # Wait for a short time before next check
+                await asyncio.sleep(2)  # 2-second polling interval
+                
+                # Optional: Send a ping to keep connection alive
+                await websocket.send_text(json.dumps({"event": "ping"}))
+                
+            except WebSocketDisconnect:
+                logger.info(f"Viewer WebSocket disconnected for {username}")
+                break
+            except Exception as inner_error:
+                logger.error(f"Error in WebSocket polling: {inner_error}")
+                await asyncio.sleep(2)  # Prevent tight error loop
     
     except HTTPException as e:
         logger.error(f"Viewer WebSocket error: {e.detail}")

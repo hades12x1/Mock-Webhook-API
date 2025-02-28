@@ -1,7 +1,6 @@
 // Viewer JavaScript file
 // This file is included in the viewer.html template
 
-// Globals
 let websocket;
 let requests = [];
 let currentPage = 0;
@@ -9,6 +8,19 @@ const pageSize = 20; // Number of requests per page
 let username = '';
 let requestModal;
 let toast;
+
+// Safe syntax highlighting function
+function safeHighlightCode(element) {
+    if (typeof hljs !== 'undefined') {
+        try {
+            hljs.highlightElement(element);
+        } catch (error) {
+            console.warn('Error highlighting code block:', error);
+        }
+    } else {
+        console.warn('Highlight.js not loaded');
+    }
+}
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', function() {
@@ -34,13 +46,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Setup code highlighting
-    try {
-        document.querySelectorAll('pre code').forEach((block) => {
-            hljs.highlightElement(block);
-        });
-    } catch (error) {
-        console.warn('Error highlighting code blocks:', error);
-    }
+    setupCodeHighlighting();
     
     // Connect to WebSocket for real-time updates
     connectWebSocket();
@@ -52,10 +58,30 @@ document.addEventListener('DOMContentLoaded', function() {
     setupEventHandlers();
 });
 
+// Setup code highlighting
+function setupCodeHighlighting() {
+    function applyHighlighting() {
+        if (typeof hljs !== 'undefined') {
+            try {
+                document.querySelectorAll('pre code').forEach((block) => {
+                    hljs.highlightElement(block);
+                });
+            } catch (error) {
+                console.warn('Error highlighting initial code blocks:', error);
+            }
+        } else {
+            // If hljs is not loaded, retry after a short delay
+            setTimeout(applyHighlighting, 1000);
+        }
+    }
+    applyHighlighting();
+}
+
 // Connect to WebSocket for real-time updates
+// WebSocket connection function
 function connectWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/@${username}`;
+    const wsUrl = `${protocol}//${window.location.host}/ws/viewer/@${username}`;
     console.log("Connecting to WebSocket:", wsUrl);
     
     websocket = new WebSocket(wsUrl);
@@ -66,27 +92,45 @@ function connectWebSocket() {
     };
     
     websocket.onmessage = function(event) {
-        const data = JSON.parse(event.data);
-        console.log("WebSocket message received:", data);
-        
-        if (data.event === 'new_request') {
-            // Show toast notification
-            const toastTime = document.getElementById('toastTime');
-            const toastContent = document.getElementById('toastContent');
+        try {
+            const data = JSON.parse(event.data);
+            console.log("WebSocket message received:", data);
             
-            if (toastTime) toastTime.textContent = new Date().toLocaleTimeString();
-            if (toastContent) toastContent.textContent = `New ${data.method} request received`;
-            
-            try {
-                toast.show();
-            } catch (e) {
-                console.error('Error showing toast:', e);
+            // Handle different types of WebSocket events
+            switch(data.event) {
+                case 'connected':
+                    // Initial connection event
+                    console.log('WebSocket connected for username:', data.username);
+                    break;
+                
+                case 'new_request':
+                    // New request received
+                    const toastTime = document.getElementById('toastTime');
+                    const toastContent = document.getElementById('toastContent');
+                    
+                    if (toastTime) toastTime.textContent = new Date().toLocaleTimeString();
+                    if (toastContent) toastContent.textContent = `New ${data.method} request received`;
+                    
+                    try {
+                        toast.show();
+                    } catch (e) {
+                        console.error('Error showing toast:', e);
+                    }
+                    
+                    // Refresh requests to show the latest request
+                    refreshRequests();
+                    break;
+                
+                case 'ping':
+                    // Keep-alive ping from server
+                    console.log('Received ping from server');
+                    break;
+                
+                default:
+                    console.log('Unhandled WebSocket event:', data.event);
             }
-            
-            // Refresh the first page if we're on it
-            if (currentPage === 0) {
-                loadRequests();
-            }
+        } catch (error) {
+            console.error('Error processing WebSocket message:', error);
         }
     };
     
@@ -94,8 +138,9 @@ function connectWebSocket() {
         console.log("WebSocket connection closed");
         updateConnectionStatus('disconnected');
         
-        // Try to reconnect after 5 seconds
-        setTimeout(connectWebSocket, 5000);
+        // Try to reconnect after a random interval to prevent thundering herd
+        const reconnectTimeout = 5000 + Math.random() * 5000;
+        setTimeout(connectWebSocket, reconnectTimeout);
     };
     
     websocket.onerror = function(error) {
@@ -104,47 +149,11 @@ function connectWebSocket() {
     };
 }
 
-// Update connection status indicator
-function updateConnectionStatus(status) {
-    const statusDot = document.getElementById('connectionStatus');
-    const statusText = document.getElementById('connectionStatusText');
+// Refresh requests by fetching the latest
+function refreshRequests() {
+    console.log(`Refreshing requests for ${username}`);
     
-    if (!statusDot || !statusText) return;
-    
-    switch(status) {
-        case 'connected':
-            statusDot.className = 'bg-success';
-            statusText.textContent = 'Connected';
-            break;
-        case 'disconnected':
-            statusDot.className = 'bg-danger';
-            statusText.textContent = 'Disconnected';
-            break;
-        case 'error':
-            statusDot.className = 'bg-danger';
-            statusText.textContent = 'Connection Error';
-            break;
-        default:
-            statusDot.className = 'bg-secondary';
-            statusText.textContent = 'Connecting...';
-    }
-}
-
-// Load webhook requests from API
-function loadRequests(append = false) {
-    console.log(`Loading requests for ${username}, append: ${append}`);
-    
-    // Show loading spinner
-    const loadingSpinner = document.getElementById('loadingSpinner');
-    const loadMoreContainer = document.getElementById('loadMoreContainer');
-    const requestsContainer = document.getElementById('requestsContainer');
-    
-    if (loadingSpinner) loadingSpinner.style.display = 'flex';
-    if (loadMoreContainer) loadMoreContainer.classList.add('d-none');
-    
-    const skip = append ? currentPage * pageSize : 0;
-    
-    fetch(`/api/requests/@${username}?limit=${pageSize}&skip=${skip}`)
+    fetch(`/api/requests/@${username}?limit=${pageSize}&skip=0`)
         .then(response => {
             if (!response.ok) {
                 return response.json().then(errData => {
@@ -164,66 +173,35 @@ function loadRequests(append = false) {
                 data = [];
             }
             
-            if (!append) {
-                requests = data;
-                currentPage = 0;
-                if (requestsContainer) requestsContainer.innerHTML = '';
-            } else {
-                requests = requests.concat(data);
-                currentPage++;
-            }
+            // Reset requests and render
+            requests = data;
+            renderRequests(data);
             
             // Update request count
             const requestCountElem = document.getElementById('requestCount');
             if (requestCountElem) {
-                requestCountElem.textContent = requests.length;
+                requestCountElem.textContent = `${requests.length}`;
             }
-            
-            // Render requests
-            renderRequests(append ? data : requests);
-            
-            // Show load more button if we got a full page
-            if (data.length === pageSize && loadMoreContainer) {
-                loadMoreContainer.classList.remove('d-none');
-            }
-            
-            if (loadingSpinner) loadingSpinner.style.display = 'none';
         })
         .catch(error => {
-            console.error('Error loading requests:', error);
-            
-            // Show error
-            if (requestsContainer && !append) {
-                requestsContainer.innerHTML = `
-                    <div class="alert alert-danger">
-                        Failed to load request history. 
-                        <details>
-                            <summary>Error Details</summary>
-                            ${error.message}
-                        </details>
-                    </div>
-                `;
-            }
-            
-            if (loadingSpinner) loadingSpinner.style.display = 'none';
-            
-            showError('Failed to load request history');
+            console.error('Error refreshing requests:', error);
+            showError('Failed to refresh request history');
         });
 }
 
 // Render requests to the container
-function renderRequests(requestsToRender) {
+function renderRequests(requestsToRender, append = false) {
     const container = document.getElementById('requestsContainer');
     
     if (!container) return;
     
-    if (!requestsToRender || requestsToRender.length === 0) {
+    if (!append && (!requestsToRender || requestsToRender.length === 0)) {
         showEmptyState(container);
         return;
     }
     
-    // If this is the first render and container is empty, clear it
-    if (container.children.length === 0 || container.querySelector('.empty-state')) {
+    // If this is the first render and not appending, clear the container
+    if (!append) {
         container.innerHTML = '';
     }
     
@@ -270,12 +248,11 @@ function renderRequests(requestsToRender) {
         container.appendChild(cardElement);
         
         // Apply syntax highlighting
-        try {
-            hljs.highlightElement(cardElement.querySelector('.card-body code:nth-of-type(1)'));
-            hljs.highlightElement(cardElement.querySelector('.card-body code:nth-of-type(2)'));
-        } catch (error) {
-            console.warn('Error highlighting code blocks:', error);
-        }
+        const requestCode = cardElement.querySelector('.card-body code:nth-of-type(1)');
+        const responseCode = cardElement.querySelector('.card-body code:nth-of-type(2)');
+        
+        if (requestCode) safeHighlightCode(requestCode);
+        if (responseCode) safeHighlightCode(responseCode);
     });
 }
 
@@ -443,7 +420,7 @@ function setupEventHandlers() {
                     })
                     .catch(error => {
                         console.error('Error clearing requests:', error);
-                        showError('Failed to clear requests.');
+                        showError('Failed toclear requests.');
                     });
                 }
             });
