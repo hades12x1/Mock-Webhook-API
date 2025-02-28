@@ -5,6 +5,7 @@ body {
     min-height: 100vh;
     display: flex;
     flex-direction: column;
+    color: #343a40;
 }
 
 .container {
@@ -17,11 +18,18 @@ body {
     overflow: hidden;
     margin-bottom: 1.5rem;
     border: none;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    transition: all 0.2s ease-in-out;
+}
+
+.card:hover {
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.1);
 }
 
 .card-header {
     border-bottom: none;
     padding: 1rem;
+    background-color: #f8f9fa;
 }
 
 .card-body {
@@ -43,6 +51,7 @@ pre {
     border-radius: 0.25rem;
     padding: 1rem;
     margin-bottom: 1rem;
+    font-size: 0.875rem;
 }
 
 .code-block {
@@ -51,6 +60,7 @@ pre {
     font-size: 0.875rem;
     background-color: #f8f9fa;
     border-radius: 0.25rem;
+    border: 1px solid #e9ecef;
 }
 
 /* HTTP method badges */
@@ -59,6 +69,34 @@ pre {
     padding: 0.4em 0.6em;
     border-radius: 0.25rem;
     color: white;
+}
+
+.badge.badge-GET {
+    background-color: #28a745;
+}
+
+.badge.badge-POST {
+    background-color: #007bff;
+}
+
+.badge.badge-PUT {
+    background-color: #fd7e14;
+}
+
+.badge.badge-DELETE {
+    background-color: #dc3545;
+}
+
+.badge.badge-PATCH {
+    background-color: #6f42c1;
+}
+
+.badge.badge-OPTIONS {
+    background-color: #20c997;
+}
+
+.badge.badge-UNKNOWN {
+    background-color: #6c757d;
 }
 
 /* Animations */
@@ -78,7 +116,8 @@ pre {
 }
 
 textarea {
-    font-family: monospace;
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    font-size: 0.875rem;
 }
 
 /* Footer */
@@ -86,6 +125,8 @@ textarea {
     margin-top: auto;
     background-color: #f8f9fa;
     border-top: 1px solid #e9ecef;
+    padding-top: 1.5rem;
+    padding-bottom: 1.5rem;
 }
 
 /* Responsive adjustments */
@@ -96,6 +137,10 @@ textarea {
     
     pre {
         font-size: 0.75rem;
+    }
+    
+    .badge {
+        font-size: 0.70rem;
     }
 }
 
@@ -123,9 +168,102 @@ textarea {
 .nav-tabs .nav-link {
     color: #495057;
     border-radius: 0.25rem 0.25rem 0 0;
+    padding: 0.5rem 1rem;
+    font-weight: 500;
 }
 
 .nav-tabs .nav-link.active {
-    font-weight: 500;
+    font-weight: 600;
     border-color: #dee2e6 #dee2e6 #fff;
+}
+
+.nav-tabs .nav-link:hover {
+    background-color: rgba(0, 123, 255, 0.05);
+    border-color: #e9ecef #e9ecef #dee2e6;
+}
+
+/* Request count statistics */
+.request-count-box {
+    padding: 1rem;
+    border-radius: 0.5rem;
+    text-align: center;
+    background-color: white;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+.request-count-box .text-primary {
+    font-size: 2rem;
+    font-weight: 600;
+}
+
+/* Connection status */
+#connectionStatus {
+    width: 10px;
+    height: 10px;
+    display: inline-block;
+    border-radius: 50%;
+    vertical-align: middle;
+}
+
+/* Empty state */
+.empty-state {
+    text-align: center;
+    padding: 3rem 1rem;
+    background-color: white;
+    border-radius: 0.5rem;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    margin: 2rem 0;
+}
+
+.empty-state i {
+    font-size: 3rem;
+    color: #6c757d;
+    margin-bottom: 1rem;
+}
+
+.empty-state pre {
+    max-width: 80%;
+    margin: 0 auto;
+    text-align: left;
+}
+
+/* Truncate long paths */
+.path-display {
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+/* Button styles */
+.btn-outline-primary {
+    border-color: #007bff;
+    color: #007bff;
+}
+
+.btn-outline-primary:hover {
+    background-color: #007bff;
+    color: white;
+}
+
+.btn-outline-danger {
+    border-color: #dc3545;
+    color: #dc3545;
+}
+
+.btn-outline-danger:hover {
+    background-color: #dc3545;
+    color: white;
+}
+
+.btn-outline-success {
+    border-color: #28a745;
+    color: #28a745;
+}
+
+.btn-outline-success:hover {
+    background-color: #28a745;
+    color: white;
 }

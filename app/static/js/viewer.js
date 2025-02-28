@@ -1,61 +1,27 @@
 // Viewer JavaScript file
 // This file is included in the viewer.html template
 
-// Ensure hljs is defined
-if (typeof hljs === 'undefined') {
-    console.warn('Highlight.js not loaded. Defining a fallback.');
-    window.hljs = {
-        highlightElement: function(block) {
-            console.log('Fallback highlight for:', block);
-        },
-        highlightAll: function() {
-            console.log('Fallback highlight all');
-        }
-    };
-}
-
-// Ensure SweetAlert2 is available
-if (typeof Swal === 'undefined') {
-    console.warn('SweetAlert2 not loaded. Defining a fallback.');
-    window.Swal = {
-        fire: function(options) {
-            console.log('Fallback Swal.fire:', options);
-            alert(options.title + '\n' + (options.text || ''));
-        }
-    };
-}
-
 // Globals
 let websocket;
 let requests = [];
 let currentPage = 0;
-const pageSize = 100; // Increased to fetch more requests
+const pageSize = 20; // Number of requests per page
 let username = '';
 let requestModal;
 let toast;
 
-// Debug function to log messages
-function debugLog(...messages) {
-    console.log('[Viewer Debug]', ...messages);
-}
-
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', function() {
-    // Debug: Log initialization start
-    debugLog('Initializing viewer script');
+    console.log('Initializing viewer script');
     
     // Get username from URL
     username = window.location.pathname.split('@')[1];
-    debugLog('Extracted username:', username);
+    console.log('Extracted username:', username);
     
     // Validate username
     if (!username) {
-        debugLog('Invalid username');
-        Swal.fire({
-            title: 'Error',
-            text: 'Invalid username',
-            icon: 'error'
-        });
+        console.error('Invalid username');
+        showError('Invalid username. Please go back to the dashboard and create a webhook.');
         return;
     }
     
@@ -64,10 +30,10 @@ document.addEventListener('DOMContentLoaded', function() {
         requestModal = new bootstrap.Modal(document.getElementById('requestModal'));
         toast = new bootstrap.Toast(document.getElementById('newRequestToast'));
     } catch (error) {
-        debugLog('Error initializing Bootstrap components:', error);
+        console.error('Error initializing Bootstrap components:', error);
     }
     
-    // Setup code highlighting with fallback
+    // Setup code highlighting
     try {
         document.querySelectorAll('pre code').forEach((block) => {
             hljs.highlightElement(block);
@@ -76,61 +42,45 @@ document.addEventListener('DOMContentLoaded', function() {
         console.warn('Error highlighting code blocks:', error);
     }
     
-    // Debug: Log before connecting WebSocket
-    debugLog('About to connect WebSocket');
-    
-    // Setup WebSocket connection
+    // Connect to WebSocket for real-time updates
     connectWebSocket();
     
-    // Debug: Log before loading requests
-    debugLog('About to load requests');
-    
-    // Load initial requests with detailed logging
+    // Load initial requests
     loadRequests();
     
     // Setup event handlers
     setupEventHandlers();
-    
-    // Debug: Log initialization complete
-    debugLog('Viewer script initialization complete');
 });
 
 // Connect to WebSocket for real-time updates
 function connectWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws/@${username}`;
-    debugLog("Connecting to WebSocket:", wsUrl);
+    console.log("Connecting to WebSocket:", wsUrl);
     
     websocket = new WebSocket(wsUrl);
     
     websocket.onopen = function(event) {
-        debugLog('WebSocket connection established');
-        const connectionStatus = document.getElementById('connectionStatus');
-        if (connectionStatus) {
-            connectionStatus.textContent = 'Connected';
-            connectionStatus.classList.remove('bg-secondary', 'bg-danger');
-            connectionStatus.classList.add('bg-success');
-        }
+        console.log('WebSocket connection established');
+        updateConnectionStatus('connected');
     };
     
     websocket.onmessage = function(event) {
         const data = JSON.parse(event.data);
-        debugLog("WebSocket message received:", data);
+        console.log("WebSocket message received:", data);
         
         if (data.event === 'new_request') {
             // Show toast notification
             const toastTime = document.getElementById('toastTime');
             const toastContent = document.getElementById('toastContent');
-            if (toastTime) toastTime.textContent = new Date().toLocaleTimeString();
-            if (toastContent) toastContent.textContent = `New request received`;
             
-            // Trigger toast if available
-            if (toast) {
-                try {
-                    toast.show();
-                } catch (toastError) {
-                    debugLog('Error showing toast:', toastError);
-                }
+            if (toastTime) toastTime.textContent = new Date().toLocaleTimeString();
+            if (toastContent) toastContent.textContent = `New ${data.method} request received`;
+            
+            try {
+                toast.show();
+            } catch (e) {
+                console.error('Error showing toast:', e);
             }
             
             // Refresh the first page if we're on it
@@ -141,34 +91,48 @@ function connectWebSocket() {
     };
     
     websocket.onclose = function(event) {
-        debugLog("WebSocket connection closed");
-        const connectionStatus = document.getElementById('connectionStatus');
-        if (connectionStatus) {
-            connectionStatus.textContent = 'Disconnected';
-            connectionStatus.classList.remove('bg-success');
-            connectionStatus.classList.add('bg-danger');
-        }
+        console.log("WebSocket connection closed");
+        updateConnectionStatus('disconnected');
         
         // Try to reconnect after 5 seconds
-        setTimeout(function() {
-            connectWebSocket();
-        }, 5000);
+        setTimeout(connectWebSocket, 5000);
     };
     
     websocket.onerror = function(error) {
-        debugLog('WebSocket error:', error);
-        const connectionStatus = document.getElementById('connectionStatus');
-        if (connectionStatus) {
-            connectionStatus.textContent = 'Error';
-            connectionStatus.classList.remove('bg-success');
-            connectionStatus.classList.add('bg-danger');
-        }
+        console.error('WebSocket error:', error);
+        updateConnectionStatus('error');
     };
 }
 
-// Load webhook requests from API with extensive error handling
+// Update connection status indicator
+function updateConnectionStatus(status) {
+    const statusDot = document.getElementById('connectionStatus');
+    const statusText = document.getElementById('connectionStatusText');
+    
+    if (!statusDot || !statusText) return;
+    
+    switch(status) {
+        case 'connected':
+            statusDot.className = 'bg-success';
+            statusText.textContent = 'Connected';
+            break;
+        case 'disconnected':
+            statusDot.className = 'bg-danger';
+            statusText.textContent = 'Disconnected';
+            break;
+        case 'error':
+            statusDot.className = 'bg-danger';
+            statusText.textContent = 'Connection Error';
+            break;
+        default:
+            statusDot.className = 'bg-secondary';
+            statusText.textContent = 'Connecting...';
+    }
+}
+
+// Load webhook requests from API
 function loadRequests(append = false) {
-    debugLog(`Loading requests for username: ${username}, Append: ${append}`);
+    console.log(`Loading requests for ${username}, append: ${append}`);
     
     // Show loading spinner
     const loadingSpinner = document.getElementById('loadingSpinner');
@@ -180,30 +144,23 @@ function loadRequests(append = false) {
     
     const skip = append ? currentPage * pageSize : 0;
     
-    // Detailed fetch with error handling
     fetch(`/api/requests/@${username}?limit=${pageSize}&skip=${skip}`)
         .then(response => {
-            debugLog("Fetch response status:", response.status);
-            
-            // Check if response is OK
             if (!response.ok) {
-                // Attempt to parse error message
                 return response.json().then(errData => {
-                    debugLog("API Error:", errData);
                     throw new Error(`API Error: ${JSON.stringify(errData)}`);
                 }).catch(() => {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 });
             }
-            
             return response.json();
         })
         .then(data => {
-            debugLog("Received requests:", data);
+            console.log(`Received ${data.length} requests`);
             
             // Ensure data is an array
             if (!Array.isArray(data)) {
-                debugLog("Received data is not an array:", data);
+                console.error("Received data is not an array:", data);
                 data = [];
             }
             
@@ -220,7 +177,6 @@ function loadRequests(append = false) {
             const requestCountElem = document.getElementById('requestCount');
             if (requestCountElem) {
                 requestCountElem.textContent = requests.length;
-                debugLog(`Updated request count: ${requests.length}`);
             }
             
             // Render requests
@@ -232,15 +188,12 @@ function loadRequests(append = false) {
             }
             
             if (loadingSpinner) loadingSpinner.style.display = 'none';
-            
-            // Debug: Log rendering complete
-            debugLog('Request loading and rendering complete');
         })
         .catch(error => {
-            debugLog('Error loading requests:', error);
+            console.error('Error loading requests:', error);
             
-            // Clear previous content and show error
-            if (requestsContainer) {
+            // Show error
+            if (requestsContainer && !append) {
                 requestsContainer.innerHTML = `
                     <div class="alert alert-danger">
                         Failed to load request history. 
@@ -254,114 +207,172 @@ function loadRequests(append = false) {
             
             if (loadingSpinner) loadingSpinner.style.display = 'none';
             
-            // Show error via SweetAlert
-            Swal.fire({
-                title: 'Error',
-                html: `Failed to load request history. 
-                    <br><small>${error.message}</small>`,
-                icon: 'error',
-                showConfirmButton: true
-            });
+            showError('Failed to load request history');
         });
 }
 
-// Render requests to the container with robust error handling
+// Render requests to the container
 function renderRequests(requestsToRender) {
-    debugLog("Rendering requests:", requestsToRender);
-    
     const container = document.getElementById('requestsContainer');
     
-    if (!container) {
-        debugLog('Request container not found');
-        return;
-    }
+    if (!container) return;
     
     if (!requestsToRender || requestsToRender.length === 0) {
-        debugLog('No requests to render');
-        container.innerHTML = `
-            <div class="alert alert-info">
-                No requests yet. Send a request to your webhook URL: 
-                <code>http://localhost:8080/api/@${username}</code>
-            </div>
-        `;
+        showEmptyState(container);
         return;
     }
     
-    debugLog(`Rendering ${requestsToRender.length} requests`);
+    // If this is the first render and container is empty, clear it
+    if (container.children.length === 0 || container.querySelector('.empty-state')) {
+        container.innerHTML = '';
+    }
     
-    requestsToRender.forEach((req, index) => {
-        debugLog(`Rendering request ${index + 1}:`, req);
-        
+    requestsToRender.forEach(req => {
         // Ensure all required fields exist
         const method = req.method || 'UNKNOWN';
         const path = req.path || '/';
-        const requestTime = req.request_time ? new Date(req.request_time).toLocaleString() : 'Unknown Time';
+        const requestTime = req.request_time ? new Date(req.request_time).toLocaleString() : 'Unknown';
         const responseTime = req.response_time || 0;
         
-        const cardHtml = `
-            <div class="card shadow-sm mb-3 request-card" data-id="${req.id || ''}">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <div>
-                        <span class="badge badge-${method}">${method}</span>
-                        <span class="ms-2">${path}</span>
+        // Create request card element
+        const cardElement = document.createElement('div');
+        cardElement.className = 'card shadow-sm mb-3 request-card';
+        cardElement.setAttribute('data-id', req.id || '');
+        
+        cardElement.innerHTML = `
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <div>
+                    <span class="badge badge-${method}">${method}</span>
+                    <span class="ms-2 path-display">${formatPath(path)}</span>
+                </div>
+                <div>
+                    <span class="text-muted me-2">${requestTime}</span>
+                    <span class="badge bg-secondary">${responseTime} ms</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6 mb-3 mb-md-0">
+                        <h6>Request</h6>
+                        <pre class="code-block"><code class="language-json">${formatCodeBlock(req.body)}</code></pre>
                     </div>
-                    <div>
-                        <span class="text-muted me-2">${requestTime}</span>
-                        <span class="badge bg-secondary">${responseTime} ms</span>
+                    <div class="col-md-6">
+                        <h6>Response</h6>
+                        <pre class="code-block"><code class="language-json">${formatCodeBlock(req.response)}</code></pre>
                     </div>
                 </div>
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <h6>Request</h6>
-                            <pre class="code-block"><code class="language-json">${formatCodeBlock(req.body)}</code></pre>
-                        </div>
-                        <div class="col-md-6">
-                            <h6>Response</h6>
-                            <pre class="code-block"><code class="language-json">${formatCodeBlock(req.response)}</code></pre>
-                        </div>
-                    </div>
-                    <button class="btn btn-sm btn-outline-primary mt-2 view-details-btn">
-                        <i class="fas fa-search me-1"></i>View Details
-                    </button>
-                </div>
+                <button class="btn btn-sm btn-outline-primary mt-2 view-details-btn">
+                    <i class="fas fa-search me-1"></i>View Details
+                </button>
             </div>
         `;
         
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = cardHtml;
-        container.appendChild(tempDiv.firstElementChild);
+        container.appendChild(cardElement);
         
-        // Highlight code blocks
+        // Apply syntax highlighting
         try {
-            container.querySelectorAll('pre code').forEach((block) => {
-                hljs.highlightElement(block);
-            });
+            hljs.highlightElement(cardElement.querySelector('.card-body code:nth-of-type(1)'));
+            hljs.highlightElement(cardElement.querySelector('.card-body code:nth-of-type(2)'));
         } catch (error) {
             console.warn('Error highlighting code blocks:', error);
         }
     });
+}
 
-    debugLog(`Finished rendering ${requestsToRender.length} requests`);
+// Show empty state when there are no requests
+function showEmptyState(container) {
+    container.innerHTML = `
+        <div class="empty-state">
+            <i class="fas fa-inbox"></i>
+            <h4>No Requests Yet</h4>
+            <p class="mb-4">Send a request to your webhook URL to see it here</p>
+            <div class="input-group mb-3 mx-auto" style="max-width: 500px;">
+                <input type="text" class="form-control" value="https://${window.location.host}/api/@${username}" readonly>
+                <button class="btn btn-outline-secondary" type="button" id="emptyStateCopyBtn">
+                    <i class="fas fa-copy"></i> Copy
+                </button>
+            </div>
+            <div class="mt-3">
+                <p>Try using cURL:</p>
+                <pre><code class="language-bash">curl -X POST https://${window.location.host}/api/@${username} -H "Content-Type: application/json" -d '{"message": "Hello, World!"}'</code></pre>
+            </div>
+        </div>
+    `;
+    
+    // Highlight the code block
+    try {
+        hljs.highlightElement(container.querySelector('pre code'));
+    } catch (error) {
+        console.warn('Error highlighting code block:', error);
+    }
+    
+    // Add copy button event listener
+    const copyBtn = container.querySelector('#emptyStateCopyBtn');
+    if (copyBtn) {
+        copyBtn.addEventListener('click', function() {
+            const urlInput = copyBtn.previousElementSibling;
+            urlInput.select();
+            navigator.clipboard.writeText(urlInput.value).then(() => {
+                showToast('URL copied to clipboard!');
+            });
+        });
+    }
+}
+
+// Format path for display
+function formatPath(path) {
+    // Truncate if too long
+    if (path.length > 40) {
+        return path.substring(0, 37) + '...';
+    }
+    return path;
 }
 
 // Format code blocks for display
 function formatCodeBlock(content) {
-    debugLog("Formatting code block:", content);
-    
     if (!content) return 'null';
     
     if (typeof content === 'object') {
-        return JSON.stringify(content, null, 2);
+        try {
+            return JSON.stringify(content, null, 2);
+        } catch (e) {
+            return String(content);
+        }
     }
     
-    try {
-        // Try to parse as JSON
-        return JSON.stringify(JSON.parse(content), null, 2);
-    } catch (e) {
-        // Return as is
-        return content || 'null';
+    if (typeof content === 'string' && content.trim().startsWith('{')) {
+        try {
+            // Try to parse as JSON
+            return JSON.stringify(JSON.parse(content), null, 2);
+        } catch (e) {
+            // Return as is
+            return content;
+        }
     }
+    
+    return String(content || 'null');
+}
+
+// Show error message
+function showError(message, details = '') {
+    Swal.fire({
+        title: 'Error',
+        html: `${message}${details ? `<br><small>${details}</small>` : ''}`,
+        icon: 'error',
+        confirmButtonText: 'OK'
+    });
+}
+
+// Show success toast
+function showToast(message) {
+    Swal.fire({
+        title: message,
+        toast: true,
+        position: 'top-end',
+        icon: 'success',
+        showConfirmButton: false,
+        timer: 3000
+    });
 }
 
 // Setup event handlers
@@ -372,15 +383,8 @@ function setupEventHandlers() {
         copyUrlBtn.addEventListener('click', function() {
             const webhookUrl = document.getElementById('webhookUrl');
             if (webhookUrl) {
-                navigator.clipboard.writeText(webhookUrl.value).then(function() {
-                    Swal.fire({
-                        toast: true,
-                        position: 'top-end',
-                        icon: 'success',
-                        title: 'URL copied to clipboard!',
-                        showConfirmButton: false,
-                        timer: 1500
-                    });
+                navigator.clipboard.writeText(webhookUrl.value).then(() => {
+                    showToast('URL copied to clipboard!');
                 });
             }
         });
@@ -432,43 +436,93 @@ function setupEventHandlers() {
                     })
                     .then(response => response.json())
                     .then(data => {
-                        Swal.fire({
-                            title: 'Success',
-                            text: `Deleted ${data.deleted_count} requests.`,
-                            icon: 'success'
-                        });
+                        showToast(`Deleted ${data.deleted_count} requests.`);
                         
                         // Reload requests
                         loadRequests();
                     })
                     .catch(error => {
                         console.error('Error clearing requests:', error);
-                        
-                        Swal.fire({
-                            title: 'Error',
-                            text: 'Failed to clear requests.',
-                            icon: 'error'
-                        });
+                        showError('Failed to clear requests.');
                     });
                 }
             });
         });
     }
+    
+    // Update webhook configuration
+    const updateConfigBtn = document.getElementById('updateConfigBtn');
+    if (updateConfigBtn) {
+        updateConfigBtn.addEventListener('click', function() {
+            updateWebhookConfig();
+        });
+    }
 }
 
-// Show request details
-function showRequestDetails(requestId) {
-    debugLog('Showing details for request:', requestId);
+// Update webhook configuration
+function updateWebhookConfig() {
+    const defaultResponse = document.getElementById('updateDefaultResponse');
+    const minTime = document.getElementById('updateResponseTimeMin');
+    const maxTime = document.getElementById('updateResponseTimeMax');
     
-    const request = requests.find(r=> r.id === requestId);
+    if (!defaultResponse || !minTime || !maxTime) return;
+    
+    let responseData;
+    
+    try {
+        responseData = JSON.parse(defaultResponse.value);
+    } catch (e) {
+        showError('Invalid JSON for default response');
+        return;
+    }
+    
+    const minTimeValue = parseInt(minTime.value);
+    const maxTimeValue = parseInt(maxTime.value);
+    
+    if (isNaN(minTimeValue) || isNaN(maxTimeValue) || minTimeValue < 0 || maxTimeValue < 0 || minTimeValue > maxTimeValue) {
+        showError('Invalid response times', 'Min time must be less than or equal to max time, and both must be non-negative.');
+        return;
+    }
+    
+    const updateData = {
+        default_response: responseData,
+        response_time_min: minTimeValue,
+        response_time_max: maxTimeValue
+    };
+    
+    fetch(`/api/users/${username}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(updateData)
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(errData => {
+                throw new Error(`API Error: ${JSON.stringify(errData)}`);
+            }).catch(() => {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        showToast('Webhook configuration updated successfully');
+    })
+    .catch(error => {
+        console.error('Error updating configuration:', error);
+        showError('Failed to update webhook configuration', error.message);
+    });
+}
+
+// Show request details in modal
+function showRequestDetails(requestId) {
+    const request = requests.find(r => r.id === requestId);
     
     if (!request) {
-        debugLog('Request not found for ID:', requestId);
-        Swal.fire({
-            title: 'Error',
-            text: 'Request details not found',
-            icon: 'error'
-        });
+        console.error('Request not found for ID:', requestId);
+        showError('Request details not found');
         return;
     }
     
@@ -476,7 +530,7 @@ function showRequestDetails(requestId) {
     const modalTitle = document.getElementById('modalTitle');
     
     if (!modalContent || !modalTitle) {
-        debugLog('Modal elements not found');
+        console.error('Modal elements not found');
         return;
     }
     
@@ -484,6 +538,28 @@ function showRequestDetails(requestId) {
     const requestTime = request.request_time ? 
         new Date(request.request_time).toLocaleString() : 
         'Unknown Time';
+    
+    // Prepare headers display
+    let headersHtml = '<pre class="bg-light p-2"><code class="language-json">';
+    
+    if (request.headers && Object.keys(request.headers).length > 0) {
+        headersHtml += JSON.stringify(request.headers, null, 2);
+    } else {
+        headersHtml += 'No headers found';
+    }
+    
+    headersHtml += '</code></pre>';
+    
+    // Prepare query params display
+    let queryParamsHtml = '<pre class="bg-light p-2"><code class="language-json">';
+    
+    if (request.query_params && Object.keys(request.query_params).length > 0) {
+        queryParamsHtml += JSON.stringify(request.query_params, null, 2);
+    } else {
+        queryParamsHtml += 'No query parameters found';
+    }
+    
+    queryParamsHtml += '</code></pre>';
     
     // Prepare modal HTML content
     modalContent.innerHTML = `
@@ -498,7 +574,7 @@ function showRequestDetails(requestId) {
             </li>
             <li class="nav-item" role="presentation">
                 <button class="nav-link" id="body-tab" data-bs-toggle="tab" 
-                        data-bs-target="#body" type="button" role="tab">Body</button>
+                        data-bs-target="#body" type="button" role="tab">Request Body</button>
             </li>
             <li class="nav-item" role="presentation">
                 <button class="nav-link" id="response-tab" data-bs-toggle="tab" 
@@ -510,35 +586,40 @@ function showRequestDetails(requestId) {
             <div class="tab-pane fade show active" id="overview" role="tabpanel">
                 <div class="row">
                     <div class="col-md-6">
+                        <div class="mb-3">
+                            <span class="badge badge-${request.method || 'UNKNOWN'}">${request.method || 'UNKNOWN'}</span>
+                            <span class="ms-2 fw-bold">${request.path || '/'}</span>
+                        </div>
                         <p><strong>Request ID:</strong> ${request.id || 'N/A'}</p>
-                        <p><strong>Method:</strong> ${request.method || 'N/A'}</p>
-                        <p><strong>Path:</strong> ${request.path || 'N/A'}</p>
                         <p><strong>Time:</strong> ${requestTime}</p>
+                        <p><strong>Response Time:</strong> ${request.response_time || 0} ms</p>
                     </div>
                     <div class="col-md-6">
-                        <p><strong>Response Time:</strong> ${request.response_time || 0} ms</p>
                         <p><strong>Query Parameters:</strong></p>
-                        <pre class="bg-light p-2 rounded"><code class="language-json">${formatCodeBlock(request.query_params)}</code></pre>
+                        ${queryParamsHtml}
                     </div>
                 </div>
             </div>
             
             <div class="tab-pane fade" id="headers" role="tabpanel">
-                <pre class="bg-light p-2 rounded"><code class="language-json">${formatCodeBlock(request.headers)}</code></pre>
+                <h6>Request Headers</h6>
+                ${headersHtml}
             </div>
             
             <div class="tab-pane fade" id="body" role="tabpanel">
-                <pre class="bg-light p-2 rounded"><code class="language-json">${formatCodeBlock(request.body)}</code></pre>
+                <h6>Request Body</h6>
+                <pre class="bg-light p-2"><code class="language-json">${formatCodeBlock(request.body)}</code></pre>
             </div>
             
             <div class="tab-pane fade" id="response" role="tabpanel">
-                <pre class="bg-light p-2 rounded"><code class="language-json">${formatCodeBlock(request.response)}</code></pre>
+                <h6>Response Body</h6>
+                <pre class="bg-light p-2"><code class="language-json">${formatCodeBlock(request.response)}</code></pre>
             </div>
         </div>
     `;
     
     // Set modal title
-    modalTitle.textContent = `${request.method || 'Request'} Details`;
+    modalTitle.textContent = `Request Details`;
     
     // Highlight code blocks
     try {
@@ -554,17 +635,10 @@ function showRequestDetails(requestId) {
         if (requestModal) {
             requestModal.show();
         } else {
-            debugLog('Request modal not initialized');
+            console.error('Request modal not initialized');
         }
     } catch (error) {
         console.error('Error showing modal:', error);
-        Swal.fire({
-            title: 'Error',
-            text: 'Could not open request details',
-            icon: 'error'
-        });
+        showError('Could not open request details');
     }
 }
-
-// Ensure the entire script is loaded and initialized
-debugLog('Viewer script fully loaded');

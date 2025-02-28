@@ -14,12 +14,33 @@ import pandas as pd
 from io import StringIO
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
+def simulate_processing_time(min_time: int, max_time: int) -> int:
+    """
+    Simulate processing time between min_time and max_time in milliseconds
+    
+    Args:
+        min_time: Minimum response time in milliseconds
+        max_time: Maximum response time in milliseconds
+        
+    Returns:
+        int: Simulated processing time
+    """
+    # Ensure valid range
+    if min_time < 0:
+        min_time = 0
+    if max_time < min_time:
+        max_time = min_time
+    
+    # Generate random time in range
+    process_time = random.randint(min_time, max_time)
+    
+    # Sleep for that duration (convert to seconds)
+    time.sleep(process_time / 1000)
+    
+    return process_time
 
 async def save_webhook_request(
     db: AsyncIOMotorDatabase,
@@ -30,44 +51,48 @@ async def save_webhook_request(
 ) -> str:
     """
     Save a webhook request to the database with enhanced logging
-    """
-    # Log detailed request information
-    logger.debug(f"Saving request for username: {username}")
-    logger.debug(f"Request method: {request.method}")
-    logger.debug(f"Request path: {request.url.path}")
-    logger.debug(f"Request headers: {dict(request.headers)}")
     
-    # Get request body with more detailed logging
+    Args:
+        db: MongoDB database connection
+        username: Username to save request for
+        request: FastAPI request object
+        response: Response data returned to client
+        response_time: Processing time in milliseconds
+        
+    Returns:
+        str: Request ID
+    """
+    # Log request information
+    logger.info(f"Saving {request.method} request for username: {username}")
+    
+    # Get request body
     body = None
     try:
         # Read the body
         raw_body = await request.body()
-        logger.debug(f"Raw body bytes: {raw_body}")
         
         if raw_body:
-            # Try to decode and parse
+            # Try to decode and parse as JSON
             try:
                 body_str = raw_body.decode('utf-8')
-                logger.debug(f"Decoded body string: {body_str}")
                 
                 # Attempt to parse as JSON
                 try:
                     body = json.loads(body_str)
-                    logger.debug(f"Parsed JSON body: {body}")
                 except json.JSONDecodeError:
                     # If not JSON, store as string
                     body = body_str
-                    logger.debug("Body is not valid JSON, storing as string")
             except Exception as decode_error:
                 logger.error(f"Error decoding body: {decode_error}")
-                body = raw_body
+                body = str(raw_body)  # Store as string representation
     except Exception as e:
         logger.error(f"Error reading request body: {e}")
         body = None
 
-    # Create request document
+    # Create request document with unique id
+    request_id = str(uuid.uuid4())
     request_doc = {
-        "id": str(uuid.uuid4()),
+        "id": request_id,
         "username": username,
         "method": request.method,
         "headers": dict(request.headers),
@@ -79,20 +104,27 @@ async def save_webhook_request(
         "response_time": response_time  # in milliseconds
     }
     
-    # Log the full request document before saving
-    logger.debug("Full request document to be saved:")
-    logger.debug(json.dumps(request_doc, default=str, indent=2))
-    
     # Check if user has reached the maximum number of requests
     count = await db.webhook_requests.count_documents({"username": username})
     max_requests = int(os.getenv("MAX_REQUESTS_PER_USER", 100000))
     
+    if count >= max_requests:
+        # Delete the oldest requests to stay under the limit
+        logger.warning(f"User {username} has reached the maximum of {max_requests} requests. Deleting oldest.")
+        oldest_requests = await db.webhook_requests.find(
+            {"username": username},
+            sort=[("request_time", 1)]
+        ).limit(1).to_list(length=1)
+        
+        if oldest_requests:
+            await db.webhook_requests.delete_one({"_id": oldest_requests[0]["_id"]})
+    
     try:
         # Insert request document
         result = await db.webhook_requests.insert_one(request_doc)
-        logger.debug(f"Request saved successfully. ID: {request_doc['id']}, MongoDB _id: {result.inserted_id}")
+        logger.info(f"Request saved with ID: {request_id}")
         
-        return request_doc["id"]
+        return request_id
     except Exception as insert_error:
         logger.error(f"Error inserting request document: {insert_error}")
         logger.error(traceback.format_exc())
@@ -101,15 +133,33 @@ async def save_webhook_request(
 async def get_user_config(db: AsyncIOMotorDatabase, username: str) -> Dict[str, Any]:
     """
     Get user configuration by username
+    
+    Args:
+        db: MongoDB database connection
+        username: Username to look up
+        
+    Returns:
+        Dict: User configuration
+        
+    Raises:
+        HTTPException: If user not found
     """
     user = await db.users.find_one({"username": username})
     if not user:
+        logger.warning(f"User not found: {username}")
         raise HTTPException(status_code=404, detail=f"User '{username}' not found")
     return user
 
 async def check_username_available(db: AsyncIOMotorDatabase, username: str) -> bool:
     """
     Check if a username is available
+    
+    Args:
+        db: MongoDB database connection
+        username: Username to check
+        
+    Returns:
+        bool: True if available, False otherwise
     """
     if not username or not username.isalnum():
         return False
@@ -117,10 +167,28 @@ async def check_username_available(db: AsyncIOMotorDatabase, username: str) -> b
     existing = await db.users.find_one({"username": username})
     return existing is None
 
-async def create_user(db: AsyncIOMotorDatabase, username: str, default_response: Dict[str, Any],
-                     response_time_min: int, response_time_max: int) -> Dict[str, Any]:
+async def create_user(
+    db: AsyncIOMotorDatabase, 
+    username: str, 
+    default_response: Dict[str, Any],
+    response_time_min: int, 
+    response_time_max: int
+) -> Dict[str, Any]:
     """
     Create a new user
+    
+    Args:
+        db: MongoDB database connection
+        username: Username to create
+        default_response: Default response to return
+        response_time_min: Minimum response time in milliseconds
+        response_time_max: Maximum response time in milliseconds
+        
+    Returns:
+        Dict: Created user document
+        
+    Raises:
+        HTTPException: If username invalid or already exists
     """
     # Validate username
     if not username or not username.isalnum():
@@ -139,16 +207,34 @@ async def create_user(db: AsyncIOMotorDatabase, username: str, default_response:
         "response_time_max": response_time_max
     }
     
+    logger.info(f"Creating new user: {username}")
+    
     # Insert user document
     await db.users.insert_one(user_doc)
     return user_doc
 
-async def update_user(db: AsyncIOMotorDatabase, username: str, 
-                     default_response: Optional[Dict[str, Any]] = None,
-                     response_time_min: Optional[int] = None, 
-                     response_time_max: Optional[int] = None) -> Dict[str, Any]:
+async def update_user(
+    db: AsyncIOMotorDatabase, 
+    username: str, 
+    default_response: Optional[Dict[str, Any]] = None,
+    response_time_min: Optional[int] = None, 
+    response_time_max: Optional[int] = None
+) -> Dict[str, Any]:
     """
     Update user configuration
+    
+    Args:
+        db: MongoDB database connection
+        username: Username to update
+        default_response: New default response
+        response_time_min: New minimum response time
+        response_time_max: New maximum response time
+        
+    Returns:
+        Dict: Updated user document
+        
+    Raises:
+        HTTPException: If user not found
     """
     # Get user
     user = await db.users.find_one({"username": username})
@@ -165,6 +251,7 @@ async def update_user(db: AsyncIOMotorDatabase, username: str,
         update_doc["response_time_max"] = response_time_max
     
     if update_doc:
+        logger.info(f"Updating user: {username}")
         # Update user document
         await db.users.update_one(
             {"username": username},
@@ -175,14 +262,27 @@ async def update_user(db: AsyncIOMotorDatabase, username: str,
     updated_user = await db.users.find_one({"username": username})
     return updated_user
 
-async def get_webhook_requests(db: AsyncIOMotorDatabase, username: str, 
-                              limit: int = 100, skip: int = 0) -> List[Dict[str, Any]]:
+async def get_webhook_requests(
+    db: AsyncIOMotorDatabase, 
+    username: str, 
+    limit: int = 20, 
+    skip: int = 0
+) -> List[Dict[str, Any]]:
     """
     Get webhook requests for a user
+    
+    Args:
+        db: MongoDB database connection
+        username: Username to get requests for
+        limit: Maximum number of requests to return
+        skip: Number of requests to skip
+        
+    Returns:
+        List[Dict]: List of request documents
     """
     cursor = db.webhook_requests.find(
         {"username": username},
-        sort=[("request_time", -1)]
+        sort=[("request_time", -1)]  # Sort by newest first
     ).skip(skip).limit(limit)
     
     return await cursor.to_list(length=limit)
@@ -190,6 +290,13 @@ async def get_webhook_requests(db: AsyncIOMotorDatabase, username: str,
 async def clear_webhook_requests(db: AsyncIOMotorDatabase, username: str) -> int:
     """
     Clear all webhook requests for a user
+    
+    Args:
+        db: MongoDB database connection
+        username: Username to clear requests for
+        
+    Returns:
+        int: Number of deleted requests
     """
     result = await db.webhook_requests.delete_many({"username": username})
     return result.deleted_count
@@ -197,47 +304,62 @@ async def clear_webhook_requests(db: AsyncIOMotorDatabase, username: str) -> int
 async def export_webhook_requests_csv(db: AsyncIOMotorDatabase, username: str) -> str:
     """
     Export webhook requests to CSV
+    
+    Args:
+        db: MongoDB database connection
+        username: Username to export requests for
+        
+    Returns:
+        str: CSV content
     """
-    # Get all webhook requests for the user
+    # Get all webhook requests for the user (limit to most recent 10,000)
     cursor = db.webhook_requests.find(
         {"username": username},
         sort=[("request_time", -1)]
-    )
+    ).limit(10000)
     
-    requests = await cursor.to_list(length=None)
+    requests = await cursor.to_list(length=10000)
     
     if not requests:
         return "No requests found"
     
-    # Convert to pandas DataFrame
-    data = []
+    # Create CSV content
+    output = StringIO()
+    csv_writer = csv.writer(output)
+    
+    # Define CSV header
+    csv_writer.writerow([
+        "ID", "Method", "Path", "Request Time", "Response Time (ms)",
+        "Headers", "Query Parameters", "Request Body", "Response"
+    ])
+    
+    # Write request data
     for req in requests:
-        # Format data for CSV
-        row = {
-            "id": req["id"],
-            "method": req["method"],
-            "path": req["path"],
-            "request_time": req["request_time"].strftime("%Y-%m-%d %H:%M:%S"),
-            "response_time_ms": req["response_time"],
-            "headers": json.dumps(req["headers"]),
-            "query_params": json.dumps(req["query_params"]),
-            "body": json.dumps(req["body"]) if req["body"] else "",
-            "response": json.dumps(req["response"]) if req["response"] else ""
-        }
-        data.append(row)
+        # Format request time
+        request_time = req.get("request_time", datetime.utcnow()).strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Format headers and query params as JSON strings
+        headers_json = json.dumps(req.get("headers", {}))
+        query_params_json = json.dumps(req.get("query_params", {}))
+        
+        # Format body and response
+        body = req.get("body", None)
+        body_json = json.dumps(body) if body is not None else ""
+        
+        response = req.get("response", None)
+        response_json = json.dumps(response) if response is not None else ""
+        
+        # Write the row
+        csv_writer.writerow([
+            req.get("id", ""),
+            req.get("method", ""),
+            req.get("path", ""),
+            request_time,
+            req.get("response_time", 0),
+            headers_json,
+            query_params_json,
+            body_json,
+            response_json
+        ])
     
-    df = pd.DataFrame(data)
-    
-    # Convert to CSV
-    csv_buffer = StringIO()
-    df.to_csv(csv_buffer, index=False)
-    
-    return csv_buffer.getvalue()
-
-def simulate_processing_time(min_time: int, max_time: int) -> int:
-    """
-    Simulate processing time between min_time and max_time in milliseconds
-    """
-    process_time = random.randint(min_time, max_time)
-    time.sleep(process_time / 1000)  # Convert to seconds
-    return process_time
+    return output.getvalue()

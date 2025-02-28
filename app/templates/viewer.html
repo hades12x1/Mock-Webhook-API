@@ -1,75 +1,248 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Webhook Mock API{% endblock %}</title>
-    <!-- Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+{% extends "base.html" %}
+
+{% block title %}Request Viewer - Webhook Mock API{% endblock %}
+
+{% block head %}
+<!-- Additional CSS for viewer page -->
+<style>
+    .badge.badge-GET { background-color: #28a745; }
+    .badge.badge-POST { background-color: #007bff; }
+    .badge.badge-PUT { background-color: #fd7e14; }
+    .badge.badge-DELETE { background-color: #dc3545; }
+    .badge.badge-PATCH { background-color: #6f42c1; }
+    .badge.badge-OPTIONS { background-color: #20c997; }
     
-    <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    .request-card.new-request {
+        animation: highlight-request 3s ease-out;
+    }
     
-    <!-- Highlight.js CSS - Added before the script -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.7.0/styles/github.min.css">
+    @keyframes highlight-request {
+        0% { background-color: rgba(40, 167, 69, 0.2); }
+        100% { background-color: transparent; }
+    }
     
-    <!-- Custom CSS -->
-    <link href="/static/css/styles.css" rel="stylesheet">
+    #connectionStatus {
+        width: 10px;
+        height: 10px;
+        display: inline-block;
+        border-radius: 50%;
+    }
     
-    <!-- jQuery (before other scripts) -->
-    <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
+    .code-block {
+        max-height: 150px;
+        overflow-y: auto;
+    }
     
-    <!-- Highlight.js Script - Ensure it's loaded before your custom scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.7.0/lib/highlight.min.js"></script>
+    .card-header {
+        background-color: #f8f9fa;
+    }
     
-    <!-- Other JavaScript libraries -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/moment@2.29.4/moment.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    .request-count-box {
+        font-size: 1.8rem;
+        font-weight: 600;
+        text-align: center;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        background-color: #f8f9fa;
+        box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    }
     
-    {% block head %}{% endblock %}
-</head>
-<body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
-        <div class="container">
-            <a class="navbar-brand" href="/">
-                <i class="fas fa-link me-2"></i>Webhook Mock API
-            </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
-                    <li class="nav-item">
-                        <a class="nav-link" href="/">Dashboard</a>
-                    </li>
-                    {% if username is defined %}
-                    <li class="nav-item">
-                        <a class="nav-link" href="/view/@{{ username }}">View Requests</a>
-                    </li>
-                    {% endif %}
-                </ul>
+    .empty-state {
+        text-align: center;
+        padding: 3rem 1rem;
+        background-color: #f8f9fa;
+        border-radius: 0.5rem;
+        margin: 2rem 0;
+    }
+    
+    .empty-state i {
+        font-size: 3rem;
+        color: #6c757d;
+        margin-bottom: 1rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-lg-6">
+        <h2 class="mb-3">
+            <i class="fas fa-eye me-2"></i>Webhook Request Viewer
+            <span class="badge bg-secondary ms-2">@{{ username }}</span>
+        </h2>
+    </div>
+    <div class="col-lg-6 text-lg-end">
+        <div class="mb-2">
+            <span class="text-muted me-2">Connection Status:</span>
+            <span id="connectionStatus" class="bg-secondary me-1"></span>
+            <span id="connectionStatusText">Connecting...</span>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-6 mb-3">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="fas fa-link me-2"></i>Your Webhook URL
+                </h5>
+                <div class="input-group mb-3">
+                    <input type="text" class="form-control" id="webhookUrl" value="https://{{ domain }}/api/@{{ username }}" readonly>
+                    <button class="btn btn-outline-secondary" type="button" id="copyUrlBtn">
+                        <i class="fas fa-copy"></i> Copy
+                    </button>
+                </div>
+                <p class="card-text text-muted">Send any HTTP request to this URL to test your webhook.</p>
             </div>
         </div>
-    </nav>
-
-    <div class="container">
-        {% if error is defined %}
-        <div class="alert alert-danger alert-dismissible fade show" role="alert">
-            {{ error }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-        </div>
-        {% endif %}
-
-        {% block content %}{% endblock %}
     </div>
-
-    <footer class="footer mt-5 py-3 bg-light">
-        <div class="container text-center">
-            <span class="text-muted">Webhook Mock API &copy; <script>document.write(new Date().getFullYear())</script></span>
+    <div class="col-md-6 mb-3">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-6">
+                        <h5 class="card-title mb-3">
+                            <i class="fas fa-chart-bar me-2"></i>Statistics
+                        </h5>
+                        <div class="request-count-box">
+                            <div class="text-primary" id="requestCount">{{ request_count }}</div>
+                            <div class="text-muted fs-6">Total Requests</div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <h5 class="card-title mb-3">
+                            <i class="fas fa-cog me-2"></i>Actions
+                        </h5>
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-outline-success btn-sm" id="exportBtn">
+                                <i class="fas fa-download me-1"></i> Export CSV
+                            </button>
+                            <button class="btn btn-outline-danger btn-sm" id="clearBtn">
+                                <i class="fas fa-trash me-1"></i> Clear All
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
-    </footer>
+    </div>
+</div>
 
-    {% block scripts %}{% endblock %}
-</body>
-</html>
+<!-- Tabs for different views -->
+<ul class="nav nav-tabs mb-4" id="viewerTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="requests-tab" data-bs-toggle="tab" data-bs-target="#requests" 
+                type="button" role="tab" aria-controls="requests" aria-selected="true">
+            <i class="fas fa-list me-1"></i> Request History
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="settings-tab" data-bs-toggle="tab" data-bs-target="#settings" 
+                type="button" role="tab" aria-controls="settings" aria-selected="false">
+            <i class="fas fa-cog me-1"></i> Webhook Settings
+        </button>
+    </li>
+</ul>
+
+<!-- Tab content -->
+<div class="tab-content" id="viewerTabsContent">
+    <!-- Requests tab -->
+    <div class="tab-pane fade show active" id="requests" role="tabpanel" aria-labelledby="requests-tab">
+        <div id="requestsContainer">
+            <!-- Request cards will be dynamically populated here -->
+        </div>
+        
+        <!-- Loading spinner -->
+        <div id="loadingSpinner" class="d-flex justify-content-center">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+        
+        <!-- Load more button -->
+        <div id="loadMoreContainer" class="text-center mt-4 d-none">
+            <button id="loadMoreBtn" class="btn btn-outline-primary">
+                <i class="fas fa-sync-alt me-1"></i> Load More
+            </button>
+        </div>
+    </div>
+    
+    <!-- Settings tab -->
+    <div class="tab-pane fade" id="settings" role="tabpanel" aria-labelledby="settings-tab">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h5 class="card-title mb-3">Webhook Configuration</h5>
+                
+                {% if user %}
+                <form id="updateConfigForm">
+                    <div class="mb-3">
+                        <label for="updateDefaultResponse" class="form-label">Default Response</label>
+                        <textarea class="form-control" id="updateDefaultResponse" rows="5">{{ user.default_response | tojson }}</textarea>
+                        <div class="form-text">The JSON response to return when your webhook is called.</div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="updateResponseTimeMin" class="form-label">Response Time Min (ms)</label>
+                            <input type="number" class="form-control" id="updateResponseTimeMin" 
+                                   value="{{ user.response_time_min }}" min="0" max="10000">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="updateResponseTimeMax" class="form-label">Response Time Max (ms)</label>
+                            <input type="number" class="form-control" id="updateResponseTimeMax" 
+                                   value="{{ user.response_time_max }}" min="0" max="10000">
+                        </div>
+                        <div class="form-text">Simulate processing delay between min and max values.</div>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <button type="button" id="updateConfigBtn" class="btn btn-primary">
+                            <i class="fas fa-save me-1"></i> Update Configuration
+                        </button>
+                    </div>
+                </form>
+                {% else %}
+                <div class="alert alert-warning">User configuration not found.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Request Details Modal -->
+<div class="modal fade" id="requestModal" tabindex="-1" aria-labelledby="modalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalTitle">Request Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="modalContent">
+                <!-- Modal content will be populated dynamically -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast Notification for New Requests -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index: 5">
+    <div id="newRequestToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="toast-header">
+            <strong class="me-auto">New Request</strong>
+            <small id="toastTime">just now</small>
+            <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+        <div class="toast-body" id="toastContent">
+            A new webhook request has been received!
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/viewer.js"></script>
+{% endblock %}

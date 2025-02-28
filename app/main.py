@@ -7,6 +7,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 from datetime import datetime
+import json
 
 from app.routers import dashboard, webhook, viewer
 
@@ -17,8 +18,8 @@ load_dotenv()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Connect to the MongoDB client when the application starts
-    app.mongodb_client = AsyncIOMotorClient(os.getenv("MONGO_URI"))
-    app.mongodb = app.mongodb_client[os.getenv("MONGO_DB")]
+    app.mongodb_client = AsyncIOMotorClient(os.getenv("MONGO_URI", "mongodb://mongodb:27017"))
+    app.mongodb = app.mongodb_client[os.getenv("MONGO_DB", "webhook_db")]
     
     # Create indexes
     await app.mongodb["users"].create_index("username", unique=True)
@@ -31,8 +32,12 @@ async def lifespan(app: FastAPI):
     app.mongodb_client.close()
 
 # Initialize FastAPI app
-app = FastAPI(lifespan=lifespan, title="Webhook Mock API", 
-              description="API for creating and managing webhook mocks")
+app = FastAPI(
+    lifespan=lifespan, 
+    title="Webhook Mock API", 
+    description="API for creating and managing webhook mocks",
+    version="2.0.0"
+)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -42,6 +47,13 @@ templates = Jinja2Templates(directory="app/templates")
 
 # Add custom template globals and filters
 templates.env.globals["current_year"] = datetime.now().year
+
+# Add custom template filters
+def tojson_filter(value, indent=None):
+    """Convert Python object to JSON string"""
+    return json.dumps(value, default=str, indent=indent)
+
+templates.env.filters["tojson"] = tojson_filter
 
 app.state.templates = templates
 
@@ -58,6 +70,11 @@ app.add_middleware(
 app.include_router(dashboard.router)
 app.include_router(webhook.router)
 app.include_router(viewer.router)
+
+# Redirect root to dashboard
+@app.get("/")
+async def redirect_to_dashboard():
+    return {"status": "ok", "message": "Webhook Mock API is running"}
 
 # Entry point to run with uvicorn
 if __name__ == "__main__":
