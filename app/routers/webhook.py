@@ -4,10 +4,16 @@ from fastapi import APIRouter, Request, Response, Depends, HTTPException, WebSoc
 from fastapi.responses import JSONResponse
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from typing import Dict, Any, List
+import logging
+import traceback
 
 from app.services.webhook import get_user_config, save_webhook_request, simulate_processing_time
 
-# Define the router - this was missing or incorrectly defined
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+# Define the router explicitly
 router = APIRouter()
 
 # Keep track of active websocket connections for realtime updates
@@ -23,6 +29,18 @@ async def webhook_endpoint(username: str, request: Request, db: AsyncIOMotorData
     Handle incoming webhook requests for a specific username
     """
     try:
+        # Log incoming request details
+        logger.debug(f"Received {request.method} request for username: {username}")
+        logger.debug(f"Request headers: {dict(request.headers)}")
+        
+        # Try to read request body
+        try:
+            body = await request.body()
+            logger.debug(f"Request body: {body}")
+        except Exception as body_error:
+            logger.error(f"Error reading request body: {body_error}")
+            body = None
+        
         # Get user configuration
         user = await get_user_config(db, username)
         
@@ -50,18 +68,22 @@ async def webhook_endpoint(username: str, request: Request, db: AsyncIOMotorData
                 try:
                     await connection.send_text(json.dumps({
                         "event": "new_request",
-                        "request_id": request_id
+                        "request_id": request_id,
+                        "method": request.method
                     }))
-                except:
-                    pass
+                except Exception as ws_error:
+                    logger.error(f"Error sending websocket message: {ws_error}")
         
         # Return response
         return JSONResponse(content=response_data)
     
     except HTTPException as e:
+        logger.error(f"HTTP Exception: {e.detail}")
         return JSONResponse(content={"error": e.detail}, status_code=e.status_code)
     
     except Exception as e:
+        logger.error(f"Unexpected error in webhook endpoint: {e}")
+        logger.error(traceback.format_exc())
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 @router.websocket("/ws/@{username}")
@@ -70,6 +92,9 @@ async def websocket_endpoint(websocket: WebSocket, username: str, db: AsyncIOMot
     Websocket endpoint for realtime updates of webhook requests
     """
     try:
+        # Log websocket connection attempt
+        logger.debug(f"Websocket connection attempt for username: {username}")
+        
         # Accept the websocket connection
         await websocket.accept()
         
@@ -81,6 +106,9 @@ async def websocket_endpoint(websocket: WebSocket, username: str, db: AsyncIOMot
             active_connections[username] = []
         active_connections[username].append(websocket)
         
+        # Log successful connection
+        logger.debug(f"Websocket connected for username: {username}")
+        
         # Send initial welcome message
         await websocket.send_text(json.dumps({
             "event": "connected",
@@ -89,15 +117,21 @@ async def websocket_endpoint(websocket: WebSocket, username: str, db: AsyncIOMot
         
         # Keep the connection open and handle messages
         while True:
-            data = await websocket.receive_text()
-            # Process incoming messages if needed
-            
-    except HTTPException:
+            try:
+                _ = await websocket.receive_text()
+                # Can add message processing logic here if needed
+            except WebSocketDisconnect:
+                logger.debug(f"Websocket disconnected for username: {username}")
+                break
+    
+    except HTTPException as http_err:
         # User not found
+        logger.error(f"Websocket connection failed - User not found: {http_err}")
         await websocket.close(code=1008, reason="User not found")
         
     except WebSocketDisconnect:
         # Connection closed
+        logger.debug(f"Websocket disconnected for username: {username}")
         if username in active_connections and websocket in active_connections[username]:
             active_connections[username].remove(websocket)
             if not active_connections[username]:
@@ -105,6 +139,9 @@ async def websocket_endpoint(websocket: WebSocket, username: str, db: AsyncIOMot
     
     except Exception as e:
         # Other errors
+        logger.error(f"Websocket error for username {username}: {e}")
+        logger.error(traceback.format_exc())
+        
         try:
             await websocket.close(code=1011, reason=str(e))
         except:

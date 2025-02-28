@@ -5,11 +5,21 @@ import time
 import uuid
 from datetime import datetime
 from typing import Dict, Any, List, Optional
+import logging
+import traceback
 
 from fastapi import HTTPException, Request
 from motor.motor_asyncio import AsyncIOMotorDatabase
 import pandas as pd
 from io import StringIO
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 async def save_webhook_request(
     db: AsyncIOMotorDatabase,
@@ -19,19 +29,40 @@ async def save_webhook_request(
     response_time: int
 ) -> str:
     """
-    Save a webhook request to the database
+    Save a webhook request to the database with enhanced logging
     """
-    # Get request body
+    # Log detailed request information
+    logger.debug(f"Saving request for username: {username}")
+    logger.debug(f"Request method: {request.method}")
+    logger.debug(f"Request path: {request.url.path}")
+    logger.debug(f"Request headers: {dict(request.headers)}")
+    
+    # Get request body with more detailed logging
     body = None
     try:
-        body = await request.body()
-        if body:
-            body = body.decode()
+        # Read the body
+        raw_body = await request.body()
+        logger.debug(f"Raw body bytes: {raw_body}")
+        
+        if raw_body:
+            # Try to decode and parse
             try:
-                body = json.loads(body)
-            except:
-                pass
-    except:
+                body_str = raw_body.decode('utf-8')
+                logger.debug(f"Decoded body string: {body_str}")
+                
+                # Attempt to parse as JSON
+                try:
+                    body = json.loads(body_str)
+                    logger.debug(f"Parsed JSON body: {body}")
+                except json.JSONDecodeError:
+                    # If not JSON, store as string
+                    body = body_str
+                    logger.debug("Body is not valid JSON, storing as string")
+            except Exception as decode_error:
+                logger.error(f"Error decoding body: {decode_error}")
+                body = raw_body
+    except Exception as e:
+        logger.error(f"Error reading request body: {e}")
         body = None
 
     # Create request document
@@ -48,22 +79,24 @@ async def save_webhook_request(
         "response_time": response_time  # in milliseconds
     }
     
+    # Log the full request document before saving
+    logger.debug("Full request document to be saved:")
+    logger.debug(json.dumps(request_doc, default=str, indent=2))
+    
     # Check if user has reached the maximum number of requests
     count = await db.webhook_requests.count_documents({"username": username})
     max_requests = int(os.getenv("MAX_REQUESTS_PER_USER", 100000))
     
-    if count >= max_requests:
-        # Delete the oldest request
-        oldest = await db.webhook_requests.find_one(
-            {"username": username}, 
-            sort=[("request_time", 1)]
-        )
-        if oldest:
-            await db.webhook_requests.delete_one({"_id": oldest["_id"]})
-    
-    # Insert request document
-    await db.webhook_requests.insert_one(request_doc)
-    return request_doc["id"]
+    try:
+        # Insert request document
+        result = await db.webhook_requests.insert_one(request_doc)
+        logger.debug(f"Request saved successfully. ID: {request_doc['id']}, MongoDB _id: {result.inserted_id}")
+        
+        return request_doc["id"]
+    except Exception as insert_error:
+        logger.error(f"Error inserting request document: {insert_error}")
+        logger.error(traceback.format_exc())
+        raise
 
 async def get_user_config(db: AsyncIOMotorDatabase, username: str) -> Dict[str, Any]:
     """

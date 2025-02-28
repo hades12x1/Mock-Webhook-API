@@ -1,452 +1,75 @@
-{% extends "base.html" %}
-
-{% block title %}Request History - @{{ username }} - Webhook Mock API{% endblock %}
-
-{% block head %}
-<style>
-    .request-card {
-        transition: all 0.3s;
-    }
-    .request-card.new {
-        animation: highlight 3s;
-    }
-    @keyframes highlight {
-        0% { background-color: rgba(0, 123, 255, 0.1); }
-        100% { background-color: transparent; }
-    }
-    .code-block {
-        max-height: 200px;
-        overflow: auto;
-    }
-    .badge-GET { background-color: #28a745; }
-    .badge-POST { background-color: #007bff; }
-    .badge-PUT { background-color: #fd7e14; }
-    .badge-DELETE { background-color: #dc3545; }
-    .badge-PATCH { background-color: #6f42c1; }
-    .badge-OPTIONS { background-color: #20c997; }
-</style>
-{% endblock %}
-
-{% block content %}
-<div class="row mb-3">
-    <div class="col-lg-8">
-        <h2>
-            <i class="fas fa-history me-2"></i>Request History for @{{ username }}
-            <span class="badge bg-primary" id="requestCount">0</span>
-        </h2>
-    </div>
-    <div class="col-lg-4 text-end">
-        <div class="btn-group">
-            <button class="btn btn-success" id="exportBtn">
-                <i class="fas fa-file-export me-2"></i>Export CSV
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Webhook Mock API{% endblock %}</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <!-- Highlight.js CSS - Added before the script -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.7.0/styles/github.min.css">
+    
+    <!-- Custom CSS -->
+    <link href="/static/css/styles.css" rel="stylesheet">
+    
+    <!-- jQuery (before other scripts) -->
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
+    
+    <!-- Highlight.js Script - Ensure it's loaded before your custom scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.7.0/lib/highlight.min.js"></script>
+    
+    <!-- Other JavaScript libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/moment@2.29.4/moment.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-link me-2"></i>Webhook Mock API
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
             </button>
-            <button class="btn btn-danger" id="clearBtn">
-                <i class="fas fa-trash me-2"></i>Clear All
-            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/">Dashboard</a>
+                    </li>
+                    {% if username is defined %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="/view/@{{ username }}">View Requests</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
         </div>
-    </div>
-</div>
+    </nav>
 
-<div class="row mb-3">
-    <div class="col-lg-12">
-        <div class="card shadow">
-            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">
-                    <i class="fas fa-link me-2"></i>Your Webhook URL
-                </h5>
-                <span id="connectionStatus" class="badge bg-secondary">Disconnected</span>
-            </div>
-            <div class="card-body">
-                <div class="input-group">
-                    <input type="text" class="form-control" id="webhookUrl" 
-                           value="https://{{ domain }}/api/@{{ username }}" readonly>
-                    <button class="btn btn-outline-secondary" type="button" id="copyUrlBtn">
-                        <i class="fas fa-copy"></i> Copy
-                    </button>
-                </div>
-                
-                {% if user is defined %}
-                <div class="mt-3">
-                    <p class="mb-1">Default Response:</p>
-                    <pre class="bg-light p-2 rounded"><code class="language-json">{{ user.default_response | tojson(indent=2) }}</code></pre>
-                    
-                    <p class="mb-1">Response Time: {{ user.response_time_min }} - {{ user.response_time_max }} ms</p>
-                </div>
-                {% endif %}
-            </div>
+    <div class="container">
+        {% if error is defined %}
+        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+            {{ error }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
-    </div>
-</div>
+        {% endif %}
 
-<div class="row">
-    <div class="col-lg-12">
-        <div class="d-flex justify-content-center" id="loadingSpinner">
-            <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">Loading...</span>
-            </div>
-        </div>
-        <div id="requestsContainer"></div>
-        <div class="text-center mt-4 d-none" id="loadMoreContainer">
-            <button class="btn btn-outline-primary" id="loadMoreBtn">
-                <i class="fas fa-sync me-2"></i>Load More
-            </button>
-        </div>
+        {% block content %}{% endblock %}
     </div>
-</div>
 
-<!-- Request Details Modal -->
-<div class="modal fade" id="requestModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-xl modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="modalTitle">Request Details</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body" id="modalContent">
-                <!-- Content will be filled dynamically -->
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-            </div>
+    <footer class="footer mt-5 py-3 bg-light">
+        <div class="container text-center">
+            <span class="text-muted">Webhook Mock API &copy; <script>document.write(new Date().getFullYear())</script></span>
         </div>
-    </div>
-</div>
+    </footer>
 
-<div class="toast-container position-fixed bottom-0 end-0 p-3">
-    <div id="newRequestToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
-        <div class="toast-header bg-primary text-white">
-            <i class="fas fa-bell me-2"></i>
-            <strong class="me-auto">New Request</strong>
-            <small id="toastTime">Just now</small>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
-        </div>
-        <div class="toast-body" id="toastContent">
-            New request received.
-        </div>
-    </div>
-</div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-    // Globals
-    let websocket;
-    let requests = [];
-    let currentPage = 0;
-    const pageSize = 10;
-    const username = "{{ username }}";
-    const requestModal = new bootstrap.Modal(document.getElementById('requestModal'));
-    const toast = new bootstrap.Toast(document.getElementById('newRequestToast'));
-    
-    // Initialize
-    $(document).ready(function() {
-        // Setup highlighting
-        hljs.highlightAll();
-        
-        // Setup websocket
-        connectWebSocket();
-        
-        // Load initial requests
-        loadRequests();
-        
-        // Setup event handlers
-        setupEventHandlers();
-    });
-    
-    // Connect to WebSocket
-    function connectWebSocket() {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/ws/@${username}`;
-        
-        websocket = new WebSocket(wsUrl);
-        
-        websocket.onopen = function(e) {
-            console.log('WebSocket connection established');
-            $('#connectionStatus').removeClass('bg-secondary bg-danger').addClass('bg-success').text('Connected');
-        };
-        
-        websocket.onmessage = function(event) {
-            const data = JSON.parse(event.data);
-            
-            if (data.event === 'new_request') {
-                // Show toast notification
-                $('#toastTime').text(moment().format('HH:mm:ss'));
-                $('#toastContent').text(`New ${data.method || ''} request received`);
-                toast.show();
-                
-                // Refresh the first page if we're on it
-                if (currentPage === 0) {
-                    loadRequests();
-                }
-            }
-        };
-        
-        websocket.onclose = function(event) {
-            $('#connectionStatus').removeClass('bg-success').addClass('bg-danger').text('Disconnected');
-            
-            // Try to reconnect after 5 seconds
-            setTimeout(function() {
-                connectWebSocket();
-            }, 5000);
-        };
-        
-        websocket.onerror = function(error) {
-            console.error('WebSocket error:', error);
-            $('#connectionStatus').removeClass('bg-success').addClass('bg-danger').text('Error');
-        };
-    }
-    
-    // Load requests from API
-    function loadRequests(append = false) {
-        $('#loadingSpinner').show();
-        $('#loadMoreContainer').addClass('d-none');
-        
-        const skip = append ? currentPage * pageSize : 0;
-        
-        $.ajax({
-            url: `/api/requests/@${username}?limit=${pageSize}&skip=${skip}`,
-            method: 'GET',
-            success: function(data) {
-                if (!append) {
-                    requests = data;
-                    currentPage = 0;
-                    $('#requestsContainer').empty();
-                } else {
-                    requests = requests.concat(data);
-                    currentPage++;
-                }
-                
-                // Update request count
-                $('#requestCount').text(requests.length);
-                
-                // Render requests
-                renderRequests(append ? data : requests);
-                
-                // Show load more button if we got a full page
-                if (data.length === pageSize) {
-                    $('#loadMoreContainer').removeClass('d-none');
-                }
-                
-                $('#loadingSpinner').hide();
-            },
-            error: function(error) {
-                console.error('Error loading requests:', error);
-                $('#loadingSpinner').hide();
-                
-                Swal.fire({
-                    title: 'Error',
-                    text: 'Failed to load request history.',
-                    icon: 'error'
-                });
-            }
-        });
-    }
-    
-    // Render requests to the container
-    function renderRequests(requestsToRender) {
-        const container = $('#requestsContainer');
-        
-        if (requestsToRender.length === 0 && requests.length === 0) {
-            container.html('<div class="alert alert-info">No requests yet. Send a request to your webhook URL to see it here.</div>');
-            return;
-        }
-        
-        for (const req of requestsToRender) {
-            const card = $(`
-                <div class="card shadow-sm mb-3 request-card" data-id="${req.id}">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <div>
-                            <span class="badge badge-${req.method}">${req.method}</span>
-                            <span class="ms-2">${req.path}</span>
-                        </div>
-                        <div>
-                            <span class="text-muted me-2">${moment(req.request_time).format('YYYY-MM-DD HH:mm:ss')}</span>
-                            <span class="badge bg-secondary">${req.response_time} ms</span>
-                        </div>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-6">
-                                <h6>Request</h6>
-                                <pre class="code-block"><code class="language-json">${formatCodeBlock(req.body)}</code></pre>
-                            </div>
-                            <div class="col-md-6">
-                                <h6>Response</h6>
-                                <pre class="code-block"><code class="language-json">${formatCodeBlock(req.response)}</code></pre>
-                            </div>
-                        </div>
-                        <button class="btn btn-sm btn-outline-primary mt-2 view-details-btn">
-                            <i class="fas fa-search me-1"></i>View Details
-                        </button>
-                    </div>
-                </div>
-            `);
-            
-            container.append(card);
-            
-            // Highlight code blocks
-            card.find('pre code').each(function(i, block) {
-                hljs.highlightElement(block);
-            });
-        }
-    }
-    
-    // Format code blocks for display
-    function formatCodeBlock(content) {
-        if (!content) return 'null';
-        
-        if (typeof content === 'object') {
-            return JSON.stringify(content, null, 2);
-        }
-        
-        try {
-            // Try to parse as JSON
-            return JSON.stringify(JSON.parse(content), null, 2);
-        } catch (e) {
-            // Return as is
-            return content;
-        }
-    }
-    
-    // Show request details modal
-    function showRequestDetails(requestId) {
-        const request = requests.find(r => r.id === requestId);
-        
-        if (!request) return;
-        
-        const modalContent = $('#modalContent');
-        
-        modalContent.html(`
-            <ul class="nav nav-tabs" id="detailsTabs" role="tablist">
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link active" id="overview-tab" data-bs-toggle="tab" 
-                            data-bs-target="#overview" type="button" role="tab">Overview</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="headers-tab" data-bs-toggle="tab" 
-                            data-bs-target="#headers" type="button" role="tab">Headers</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="body-tab" data-bs-toggle="tab" 
-                            data-bs-target="#body" type="button" role="tab">Body</button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" id="response-tab" data-bs-toggle="tab" 
-                            data-bs-target="#response" type="button" role="tab">Response</button>
-                </li>
-            </ul>
-            
-            <div class="tab-content p-3" id="detailsTabsContent">
-                <div class="tab-pane fade show active" id="overview" role="tabpanel">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <p><strong>Request ID:</strong> ${request.id}</p>
-                            <p><strong>Method:</strong> ${request.method}</p>
-                            <p><strong>Path:</strong> ${request.path}</p>
-                            <p><strong>Time:</strong> ${moment(request.request_time).format('YYYY-MM-DD HH:mm:ss')}</p>
-                        </div>
-                        <div class="col-md-6">
-                            <p><strong>Response Time:</strong> ${request.response_time} ms</p>
-                            <p><strong>Query Parameters:</strong></p>
-                            <pre class="bg-light p-2 rounded"><code class="language-json">${formatCodeBlock(request.query_params)}</code></pre>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="tab-pane fade" id="headers" role="tabpanel">
-                    <pre class="bg-light p-2 rounded"><code class="language-json">${formatCodeBlock(request.headers)}</code></pre>
-                </div>
-                
-                <div class="tab-pane fade" id="body" role="tabpanel">
-                    <pre class="bg-light p-2 rounded"><code class="language-json">${formatCodeBlock(request.body)}</code></pre>
-                </div>
-                
-                <div class="tab-pane fade" id="response" role="tabpanel">
-                    <pre class="bg-light p-2 rounded"><code class="language-json">${formatCodeBlock(request.response)}</code></pre>
-                </div>
-            </div>
-        `);
-        
-        // Highlight code blocks
-        modalContent.find('pre code').each(function(i, block) {
-            hljs.highlightElement(block);
-        });
-        
-        // Set modal title
-        $('#modalTitle').text(`${request.method} Request Details`);
-        
-        // Show modal
-        requestModal.show();
-    }
-    
-    // Setup event handlers
-    function setupEventHandlers() {
-        // Copy webhook URL to clipboard
-        $('#copyUrlBtn').on('click', function() {
-            const webhookUrl = $('#webhookUrl').val();
-            navigator.clipboard.writeText(webhookUrl).then(function() {
-                Swal.fire({
-                    toast: true,
-                    position: 'top-end',
-                    icon: 'success',
-                    title: 'URL copied to clipboard!',
-                    showConfirmButton: false,
-                    timer: 1500
-                });
-            });
-        });
-        
-        // View request details
-        $(document).on('click', '.view-details-btn', function() {
-            const requestId = $(this).closest('.request-card').data('id');
-            showRequestDetails(requestId);
-        });
-        
-        // Load more requests
-        $('#loadMoreBtn').on('click', function() {
-            loadRequests(true);
-        });
-        
-        // Export requests to CSV
-        $('#exportBtn').on('click', function() {
-            window.location.href = `/api/requests/@${username}/export`;
-        });
-        
-        // Clear all requests
-        $('#clearBtn').on('click', function() {
-            Swal.fire({
-                title: 'Clear All Requests?',
-                text: 'This action cannot be undone!',
-                icon: 'warning',
-                showCancelButton: true,
-                confirmButtonText: 'Yes, clear all',
-                cancelButtonText: 'Cancel'
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    $.ajax({
-                        url: `/api/requests/@${username}`,
-                        method: 'DELETE',
-                        success: function(data) {
-                            Swal.fire({
-                                title: 'Success',
-                                text: `Deleted ${data.deleted_count} requests.`,
-                                icon: 'success'
-                            });
-                            
-                            // Reload requests
-                            loadRequests();
-                        },
-                        error: function(error) {
-                            Swal.fire({
-                                title: 'Error',
-                                text: 'Failed to clear requests.',
-                                icon: 'error'
-                            });
-                        }
-                    });
-                }
-            });
-        });
-    }
-</script>
-{% endblock %}
+    {% block scripts %}{% endblock %}
+</body>
+</html>
