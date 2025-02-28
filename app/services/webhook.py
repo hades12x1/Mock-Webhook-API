@@ -4,14 +4,14 @@ import random
 import time
 import uuid
 from datetime import datetime
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Union, Tuple
 import logging
 import traceback
 
 from fastapi import HTTPException, Request
 from motor.motor_asyncio import AsyncIOMotorDatabase
-import pandas as pd
 from io import StringIO
+import csv
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -262,20 +262,34 @@ async def update_user(
     updated_user = await db.users.find_one({"username": username})
     return updated_user
 
+async def get_webhook_requests_count(db: AsyncIOMotorDatabase, username: str) -> int:
+    """
+    Get the total count of webhook requests for a user
+    
+    Args:
+        db: MongoDB database connection
+        username: Username to get count for
+        
+    Returns:
+        int: Total number of requests
+    """
+    count = await db.webhook_requests.count_documents({"username": username})
+    return count
+
 async def get_webhook_requests(
     db: AsyncIOMotorDatabase, 
     username: str, 
-    limit: int = 20, 
+    limit: int = 10, 
     skip: int = 0
 ) -> List[Dict[str, Any]]:
     """
-    Get webhook requests for a user
+    Get webhook requests for a user with pagination
     
     Args:
         db: MongoDB database connection
         username: Username to get requests for
         limit: Maximum number of requests to return
-        skip: Number of requests to skip
+        skip: Number of requests to skip (for pagination)
         
     Returns:
         List[Dict]: List of request documents
@@ -286,6 +300,30 @@ async def get_webhook_requests(
     ).skip(skip).limit(limit)
     
     return await cursor.to_list(length=limit)
+
+async def delete_webhook_request(
+    db: AsyncIOMotorDatabase, 
+    username: str, 
+    request_id: str
+) -> bool:
+    """
+    Delete a specific webhook request by ID
+    
+    Args:
+        db: MongoDB database connection
+        username: Username the request belongs to
+        request_id: ID of the request to delete
+        
+    Returns:
+        bool: True if deleted, False if not found
+    """
+    # Delete the request
+    result = await db.webhook_requests.delete_one(
+        {"username": username, "id": request_id}
+    )
+    
+    # Return success indicator
+    return result.deleted_count > 0
 
 async def clear_webhook_requests(db: AsyncIOMotorDatabase, username: str) -> int:
     """
@@ -363,3 +401,98 @@ async def export_webhook_requests_csv(db: AsyncIOMotorDatabase, username: str) -
         ])
     
     return output.getvalue()
+
+async def search_webhook_requests(
+    db: AsyncIOMotorDatabase,
+    username: str,
+    query: str,
+    limit: int = 10
+) -> List[Dict[str, Any]]:
+    """
+    Search webhook requests by method, path, or content
+    
+    Args:
+        db: MongoDB database connection
+        username: Username to search requests for
+        query: Search query string
+        limit: Maximum number of results to return
+        
+    Returns:
+        List[Dict]: List of matching request documents
+    """
+    # Create search criteria
+    search_criteria = {
+        "$and": [
+            {"username": username},
+            {"$or": [
+                {"method": {"$regex": query, "$options": "i"}},
+                {"path": {"$regex": query, "$options": "i"}},
+                # Use $toString to convert ObjectId to string for regex search
+                {"id": {"$regex": query, "$options": "i"}}
+            ]}
+        ]
+    }
+    
+    # Execute search
+    cursor = db.webhook_requests.find(
+        search_criteria,
+        sort=[("request_time", -1)]
+    ).limit(limit)
+    
+    return await cursor.to_list(length=limit)
+
+async def get_request_statistics(
+    db: AsyncIOMotorDatabase,
+    username: str
+) -> Dict[str, Any]:
+    """
+    Get statistics about webhook requests
+    
+    Args:
+        db: MongoDB database connection
+        username: Username to get statistics for
+        
+    Returns:
+        Dict: Statistics about webhook requests
+    """
+    # Get total request count
+    total_count = await db.webhook_requests.count_documents({"username": username})
+    
+    # Get method counts using aggregation
+    method_counts = []
+    if total_count > 0:
+        method_counts_cursor = db.webhook_requests.aggregate([
+            {"$match": {"username": username}},
+            {"$group": {"_id": "$method", "count": {"$sum": 1}}},
+            {"$sort": {"count": -1}}
+        ])
+        method_counts = await method_counts_cursor.to_list(length=10)
+    
+    # Get average response time
+    avg_response_time = 0
+    if total_count > 0:
+        avg_time_cursor = db.webhook_requests.aggregate([
+            {"$match": {"username": username}},
+            {"$group": {"_id": None, "avg_time": {"$avg": "$response_time"}}}
+        ])
+        avg_time_results = await avg_time_cursor.to_list(length=1)
+        if avg_time_results:
+            avg_response_time = round(avg_time_results[0]["avg_time"], 2)
+    
+    # Get latest request time
+    latest_request = None
+    if total_count > 0:
+        latest = await db.webhook_requests.find_one(
+            {"username": username},
+            sort=[("request_time", -1)]
+        )
+        if latest:
+            latest_request = latest.get("request_time")
+    
+    # Return statistics
+    return {
+        "total_requests": total_count,
+        "method_counts": {item["_id"]: item["count"] for item in method_counts},
+        "average_response_time": avg_response_time,
+        "latest_request_time": latest_request.isoformat() if latest_request else None
+    }

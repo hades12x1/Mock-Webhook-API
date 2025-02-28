@@ -60,6 +60,46 @@
         color: #6c757d;
         margin-bottom: 1rem;
     }
+    
+    .pagination-nav {
+        display: flex;
+        justify-content: center;
+        margin-top: 1.5rem;
+    }
+    
+    .stats-card {
+        transition: all 0.3s ease;
+    }
+    
+    .stats-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    }
+    
+    .action-btn {
+        transition: all 0.2s ease;
+    }
+    
+    .action-btn:hover {
+        transform: translateY(-2px);
+    }
+    
+    .dropdown-menu {
+        border-radius: 0.5rem;
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        border: none;
+    }
+    
+    .tab-content {
+        min-height: 400px;
+    }
+    
+    #loadingSpinner {
+        opacity: 0.8;
+        background-color: rgba(255, 255, 255, 0.7);
+        border-radius: 0.5rem;
+        padding: 1rem;
+    }
 </style>
 {% endblock %}
 
@@ -94,15 +134,19 @@
                     </button>
                 </div>
                 <p class="card-text text-muted">Send any HTTP request to this URL to test your webhook.</p>
+                
+                <a href="/webhook/@{{ username }}" class="btn btn-sm btn-outline-primary w-100">
+                    <i class="fas fa-bolt me-1"></i> Test Webhook
+                </a>
             </div>
         </div>
     </div>
     <div class="col-md-6 mb-3">
-        <div class="card shadow-sm">
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-6">
-                        <h5 class="card-title mb-3">
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <div class="card shadow-sm stats-card h-100">
+                    <div class="card-body text-center">
+                        <h5 class="card-title">
                             <i class="fas fa-chart-bar me-2"></i>Statistics
                         </h5>
                         <div class="request-count-box">
@@ -110,16 +154,29 @@
                             <div class="text-muted fs-6">Total Requests</div>
                         </div>
                     </div>
-                    <div class="col-6">
-                        <h5 class="card-title mb-3">
+                </div>
+            </div>
+            <div class="col-md-6 mb-3">
+                <div class="card shadow-sm stats-card h-100">
+                    <div class="card-body">
+                        <h5 class="card-title text-center">
                             <i class="fas fa-cog me-2"></i>Actions
                         </h5>
                         <div class="d-grid gap-2">
-                            <button class="btn btn-outline-success btn-sm" id="exportBtn">
-                                <i class="fas fa-download me-1"></i> Export CSV
-                            </button>
-                            <button class="btn btn-outline-danger btn-sm" id="clearBtn">
+                            <div class="dropdown">
+                                <button class="btn btn-outline-success btn-sm w-100 action-btn dropdown-toggle" type="button" id="exportDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i class="fas fa-download me-1"></i> Export Data
+                                </button>
+                                <ul class="dropdown-menu w-100" aria-labelledby="exportDropdown">
+                                    <li><a class="dropdown-item" href="#" id="exportCsvBtn"><i class="fas fa-file-csv me-2"></i>CSV Format</a></li>
+                                    <li><a class="dropdown-item" href="#" id="exportJsonBtn"><i class="fas fa-file-code me-2"></i>JSON Format</a></li>
+                                </ul>
+                            </div>
+                            <button class="btn btn-outline-danger btn-sm action-btn" id="clearBtn">
                                 <i class="fas fa-trash me-1"></i> Clear All
+                            </button>
+                            <button class="btn btn-outline-primary btn-sm action-btn" id="refreshBtn">
+                                <i class="fas fa-sync-alt me-1"></i> Refresh
                             </button>
                         </div>
                     </div>
@@ -149,22 +206,37 @@
 <div class="tab-content" id="viewerTabsContent">
     <!-- Requests tab -->
     <div class="tab-pane fade show active" id="requests" role="tabpanel" aria-labelledby="requests-tab">
-        <div id="requestsContainer">
-            <!-- Request cards will be dynamically populated here -->
-        </div>
-        
-        <!-- Loading spinner -->
-        <div id="loadingSpinner" class="d-flex justify-content-center">
-            <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">Loading...</span>
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="mb-0">
+                        <i class="fas fa-history me-2"></i>Request History
+                    </h5>
+                    <div class="btn-group" role="group">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="refreshBtn">
+                            <i class="fas fa-sync-alt me-1"></i> Refresh
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="requestsContainer">
+                    <!-- Request cards will be dynamically populated here -->
+                </div>
+                
+                <!-- Loading spinner -->
+                <div id="loadingSpinner" class="d-flex justify-content-center position-absolute top-50 start-50 translate-middle">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+                
+                <!-- Load more button -->
+                <div id="loadMoreContainer" class="text-center mt-4 d-none">
+                    <button id="loadMoreBtn" class="btn btn-outline-primary">
+                        <i class="fas fa-chevron-down me-1"></i> Load More
+                    </button>
+                </div>
             </div>
-        </div>
-        
-        <!-- Load more button -->
-        <div id="loadMoreContainer" class="text-center mt-4 d-none">
-            <button id="loadMoreBtn" class="btn btn-outline-primary">
-                <i class="fas fa-sync-alt me-1"></i> Load More
-            </button>
         </div>
     </div>
     
@@ -172,7 +244,9 @@
     <div class="tab-pane fade" id="settings" role="tabpanel" aria-labelledby="settings-tab">
         <div class="card shadow-sm">
             <div class="card-body">
-                <h5 class="card-title mb-3">Webhook Configuration</h5>
+                <h5 class="card-title mb-3">
+                    <i class="fas fa-sliders-h me-2"></i>Webhook Configuration
+                </h5>
                 
                 {% if user %}
                 <form id="updateConfigForm">
@@ -212,7 +286,7 @@
 
 <!-- Request Details Modal -->
 <div class="modal fade" id="requestModal" tabindex="-1" aria-labelledby="modalTitle" aria-hidden="true">
-    <div class="modal-dialog modal-xl">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title" id="modalTitle">Request Details</h5>
@@ -231,10 +305,11 @@
 <!-- Toast Notification for New Requests -->
 <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 5">
     <div id="newRequestToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
-        <div class="toast-header">
+        <div class="toast-header bg-success text-white">
+            <i class="fas fa-bell me-2"></i>
             <strong class="me-auto">New Request</strong>
             <small id="toastTime">just now</small>
-            <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
         </div>
         <div class="toast-body" id="toastContent">
             A new webhook request has been received!

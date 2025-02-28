@@ -1,13 +1,15 @@
-// Viewer JavaScript file
+// Viewer JavaScript file - Enhanced with pagination and better UI/UX
 // This file is included in the viewer.html template
 
 let websocket;
 let requests = [];
 let currentPage = 0;
-const pageSize = 20; // Number of requests per page
+const pageSize = 10; // Number of requests per page
 let username = '';
 let requestModal;
 let toast;
+let isLoading = false;
+let hasMoreRequests = true;
 
 // Safe syntax highlighting function
 function safeHighlightCode(element) {
@@ -78,7 +80,6 @@ function setupCodeHighlighting() {
 }
 
 // Connect to WebSocket for real-time updates
-// WebSocket connection function
 function connectWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws/viewer/@${username}`;
@@ -149,11 +150,58 @@ function connectWebSocket() {
     };
 }
 
-// Refresh requests by fetching the latest
-function refreshRequests() {
-    console.log(`Refreshing requests for ${username}`);
+// Update connection status indicator
+function updateConnectionStatus(status) {
+    const statusIndicator = document.getElementById('connectionStatus');
+    const statusText = document.getElementById('connectionStatusText');
     
-    fetch(`/api/requests/@${username}?limit=${pageSize}&skip=0`)
+    if (!statusIndicator || !statusText) return;
+    
+    switch(status) {
+        case 'connected':
+            statusIndicator.className = 'bg-success';
+            statusText.textContent = 'Connected';
+            break;
+            
+        case 'disconnected':
+            statusIndicator.className = 'bg-warning';
+            statusText.textContent = 'Disconnected';
+            break;
+            
+        case 'error':
+            statusIndicator.className = 'bg-danger';
+            statusText.textContent = 'Connection Error';
+            break;
+            
+        default:
+            statusIndicator.className = 'bg-secondary';
+            statusText.textContent = 'Connecting...';
+    }
+}
+
+// Load requests with pagination
+function loadRequests(loadMore = false) {
+    if (isLoading) return;
+    
+    isLoading = true;
+    
+    // Show loading spinner
+    const loadingSpinner = document.getElementById('loadingSpinner');
+    if (loadingSpinner) loadingSpinner.style.display = 'flex';
+    
+    // Calculate skip for pagination
+    const skip = loadMore ? requests.length : 0;
+    
+    // If not loading more, reset current data
+    if (!loadMore) {
+        requests = [];
+        currentPage = 0;
+    }
+    
+    console.log(`Loading requests for ${username}, skip: ${skip}, limit: ${pageSize}`);
+    
+    // Fetch requests from API
+    fetch(`/api/requests/@${username}?limit=${pageSize}&skip=${skip}`)
         .then(response => {
             if (!response.ok) {
                 return response.json().then(errData => {
@@ -167,26 +215,71 @@ function refreshRequests() {
         .then(data => {
             console.log(`Received ${data.length} requests`);
             
+            // Hide loading spinner
+            if (loadingSpinner) loadingSpinner.style.display = 'none';
+            
             // Ensure data is an array
             if (!Array.isArray(data)) {
                 console.error("Received data is not an array:", data);
                 data = [];
             }
             
-            // Reset requests and render
-            requests = data;
-            renderRequests(data);
+            // Update hasMoreRequests flag
+            hasMoreRequests = data.length === pageSize;
+            
+            // Show/hide load more button
+            const loadMoreContainer = document.getElementById('loadMoreContainer');
+            if (loadMoreContainer) {
+                loadMoreContainer.style.display = hasMoreRequests ? 'block' : 'none';
+            }
+            
+            if (loadMore) {
+                // Append new requests to existing array
+                requests = requests.concat(data);
+                renderRequests(data, true);
+            } else {
+                // Replace requests with new data
+                requests = data;
+                renderRequests(data, false);
+            }
             
             // Update request count
             const requestCountElem = document.getElementById('requestCount');
             if (requestCountElem) {
-                requestCountElem.textContent = `${requests.length}`;
+                // Get total count from server
+                fetch(`/api/requests/@${username}/count`)
+                    .then(response => response.json())
+                    .then(countData => {
+                        requestCountElem.textContent = countData.count.toLocaleString();
+                    })
+                    .catch(error => {
+                        console.error('Error fetching request count:', error);
+                        requestCountElem.textContent = requests.length;
+                    });
             }
+            
+            isLoading = false;
         })
         .catch(error => {
-            console.error('Error refreshing requests:', error);
-            showError('Failed to refresh request history');
+            console.error('Error loading requests:', error);
+            
+            // Hide loading spinner
+            if (loadingSpinner) loadingSpinner.style.display = 'none';
+            
+            // Show error
+            showError(`Failed to load requests: ${error.message}`);
+            
+            isLoading = false;
         });
+}
+
+// Refresh requests by fetching the latest
+function refreshRequests() {
+    // Reset page index
+    currentPage = 0;
+    
+    // Load first page of requests
+    loadRequests(false);
 }
 
 // Render requests to the container
@@ -231,17 +324,22 @@ function renderRequests(requestsToRender, append = false) {
             <div class="card-body">
                 <div class="row">
                     <div class="col-md-6 mb-3 mb-md-0">
-                        <h6>Request</h6>
+                        <h6 class="mb-2">Request</h6>
                         <pre class="code-block"><code class="language-json">${formatCodeBlock(req.body)}</code></pre>
                     </div>
                     <div class="col-md-6">
-                        <h6>Response</h6>
+                        <h6 class="mb-2">Response</h6>
                         <pre class="code-block"><code class="language-json">${formatCodeBlock(req.response)}</code></pre>
                     </div>
                 </div>
-                <button class="btn btn-sm btn-outline-primary mt-2 view-details-btn">
-                    <i class="fas fa-search me-1"></i>View Details
-                </button>
+                <div class="mt-3 d-flex justify-content-between">
+                    <button class="btn btn-sm btn-outline-primary view-details-btn">
+                        <i class="fas fa-search me-1"></i>View Details
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger delete-request-btn" data-id="${req.id || ''}">
+                        <i class="fas fa-trash me-1"></i>Delete
+                    </button>
+                </div>
             </div>
         `;
         
@@ -253,6 +351,67 @@ function renderRequests(requestsToRender, append = false) {
         
         if (requestCode) safeHighlightCode(requestCode);
         if (responseCode) safeHighlightCode(responseCode);
+        
+        // Add delete button event listener
+        const deleteBtn = cardElement.querySelector('.delete-request-btn');
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', function(event) {
+                event.stopPropagation();
+                const requestId = this.getAttribute('data-id');
+                deleteRequest(requestId);
+            });
+        }
+    });
+}
+
+// Delete a single request
+function deleteRequest(requestId) {
+    Swal.fire({
+        title: 'Delete Request?',
+        text: 'Are you sure you want to delete this request?',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, delete it',
+        cancelButtonText: 'Cancel'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            fetch(`/api/requests/@${username}/${requestId}`, {
+                method: 'DELETE'
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Remove from UI
+                const requestCard = document.querySelector(`.request-card[data-id="${requestId}"]`);
+                if (requestCard) {
+                    requestCard.remove();
+                }
+                
+                // Remove from requests array
+                requests = requests.filter(req => req.id !== requestId);
+                
+                // Update count
+                const requestCountElem = document.getElementById('requestCount');
+                if (requestCountElem) {
+                    const currentCount = parseInt(requestCountElem.textContent.replace(/,/g, ''));
+                    requestCountElem.textContent = (currentCount - 1).toLocaleString();
+                }
+                
+                // Show toast
+                showToast('Request deleted successfully');
+                
+                // Check if we need to show empty state
+                if (requests.length === 0) {
+                    const container = document.getElementById('requestsContainer');
+                    if (container) {
+                        showEmptyState(container);
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error deleting request:', error);
+                showError('Failed to delete request');
+            });
+        }
     });
 }
 
@@ -260,7 +419,7 @@ function renderRequests(requestsToRender, append = false) {
 function showEmptyState(container) {
     container.innerHTML = `
         <div class="empty-state">
-            <i class="fas fa-inbox"></i>
+            <i class="fas fa-inbox mb-3"></i>
             <h4>No Requests Yet</h4>
             <p class="mb-4">Send a request to your webhook URL to see it here</p>
             <div class="input-group mb-3 mx-auto" style="max-width: 500px;">
@@ -387,11 +546,18 @@ function setupEventHandlers() {
         });
     }
     
-    // Export requests to CSV
-    const exportBtn = document.getElementById('exportBtn');
-    if (exportBtn) {
-        exportBtn.addEventListener('click', function() {
-            window.location.href = `/api/requests/@${username}/export`;
+    // Export dropdown options
+    const exportCsvBtn = document.getElementById('exportCsvBtn');
+    if (exportCsvBtn) {
+        exportCsvBtn.addEventListener('click', function() {
+            window.location.href = `/api/requests/@${username}/export?format=csv`;
+        });
+    }
+    
+    const exportJsonBtn = document.getElementById('exportJsonBtn');
+    if (exportJsonBtn) {
+        exportJsonBtn.addEventListener('click', function() {
+            window.location.href = `/api/requests/@${username}/export?format=json`;
         });
     }
     
@@ -416,14 +582,22 @@ function setupEventHandlers() {
                         showToast(`Deleted ${data.deleted_count} requests.`);
                         
                         // Reload requests
-                        loadRequests();
+                        refreshRequests();
                     })
                     .catch(error => {
                         console.error('Error clearing requests:', error);
-                        showError('Failed toclear requests.');
+                        showError('Failed to clear requests.');
                     });
                 }
             });
+        });
+    }
+    
+    // Refresh requests
+    const refreshBtn = document.getElementById('refreshBtn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', function() {
+            refreshRequests();
         });
     }
     
@@ -432,6 +606,19 @@ function setupEventHandlers() {
     if (updateConfigBtn) {
         updateConfigBtn.addEventListener('click', function() {
             updateWebhookConfig();
+        });
+    }
+    
+    // Format JSON in configuration form
+    const updateDefaultResponse = document.getElementById('updateDefaultResponse');
+    if (updateDefaultResponse) {
+        updateDefaultResponse.addEventListener('blur', function() {
+            try {
+                const json = JSON.parse(this.value);
+                this.value = JSON.stringify(json, null, 2);
+            } catch (e) {
+                // Not valid JSON, leave as is
+            }
         });
     }
 }
@@ -593,6 +780,15 @@ function showRequestDetails(requestId) {
                 <pre class="bg-light p-2"><code class="language-json">${formatCodeBlock(request.response)}</code></pre>
             </div>
         </div>
+        
+        <div class="mt-3 d-flex justify-content-between">
+            <button class="btn btn-outline-primary" id="copyDetailsBtn">
+                <i class="fas fa-copy me-1"></i>Copy as cURL
+            </button>
+            <button class="btn btn-outline-danger" id="modalDeleteBtn" data-id="${request.id}">
+                <i class="fas fa-trash me-1"></i>Delete Request
+            </button>
+        </div>
     `;
     
     // Set modal title
@@ -607,6 +803,29 @@ function showRequestDetails(requestId) {
         console.warn('Error highlighting modal code blocks:', error);
     }
     
+    // Add copy as cURL button event listener
+    const copyDetailsBtn = modalContent.querySelector('#copyDetailsBtn');
+    if (copyDetailsBtn) {
+        copyDetailsBtn.addEventListener('click', function() {
+            const curlCommand = generateCurlCommand(request);
+            navigator.clipboard.writeText(curlCommand).then(() => {
+                showToast('cURL command copied to clipboard!');
+            });
+        });
+    }
+    
+    // Add delete button event listener
+    const modalDeleteBtn = modalContent.querySelector('#modalDeleteBtn');
+    if (modalDeleteBtn) {
+        modalDeleteBtn.addEventListener('click', function() {
+            const requestId = this.getAttribute('data-id');
+            if (requestModal) {
+                requestModal.hide();
+            }
+            deleteRequest(requestId);
+        });
+    }
+    
     // Show the modal
     try {
         if (requestModal) {
@@ -618,4 +837,32 @@ function showRequestDetails(requestId) {
         console.error('Error showing modal:', error);
         showError('Could not open request details');
     }
+}
+
+// Generate cURL command for a request
+function generateCurlCommand(request) {
+    let curlCmd = `curl -X ${request.method} "${window.location.protocol}//${window.location.host}${request.path}"`;
+    
+    // Add headers
+    if (request.headers && Object.keys(request.headers).length > 0) {
+        for (const [key, value] of Object.entries(request.headers)) {
+            // Skip host header
+            if (key.toLowerCase() === 'host') continue;
+            
+            curlCmd += `\n  -H "${key}: ${value.replace(/"/g, '\\"')}"`;
+        }
+    }
+    
+    // Add body for POST, PUT, PATCH
+    if (['POST', 'PUT', 'PATCH'].includes(request.method) && request.body) {
+        let body = request.body;
+        
+        if (typeof body === 'object') {
+            body = JSON.stringify(body);
+        }
+        
+        curlCmd += `\n  -d '${body.replace(/'/g, "\\'")}'`;
+    }
+    
+    return curlCmd;
 }

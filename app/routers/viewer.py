@@ -12,7 +12,7 @@ import asyncio
 
 from app.services.webhook import (
     get_webhook_requests, get_user_config, clear_webhook_requests,
-    export_webhook_requests_csv
+    export_webhook_requests_csv, delete_webhook_request, get_webhook_requests_count
 )
 from app.services.db import get_db, get_db_websocket
 
@@ -113,7 +113,7 @@ async def view_requests(
 async def get_requests_api(
     username: str,
     request: Request,
-    limit: int = 20,
+    limit: int = 10,
     skip: int = 0,
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
@@ -123,7 +123,7 @@ async def get_requests_api(
     try:
         # Validate limit and skip parameters
         if limit < 1 or limit > 100:
-            limit = 20  # Default to 20 if invalid
+            limit = 10  # Default to 10 if invalid
         
         if skip < 0:
             skip = 0  # Default to 0 if negative
@@ -185,6 +185,32 @@ async def get_requests_api(
             status_code=500
         )
 
+@router.get("/api/requests/@{username}/count", response_model=Dict[str, int])
+async def get_request_count_api(
+    username: str,
+    request: Request,
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Get the total number of webhook requests for a user
+    """
+    try:
+        # Get user to ensure they exist
+        await get_user_config(db, username)
+        
+        # Get count
+        count = await get_webhook_requests_count(db, username)
+        
+        return {"count": count}
+    
+    except HTTPException as e:
+        return JSONResponse(content={"error": e.detail}, status_code=e.status_code)
+    
+    except Exception as e:
+        logger.error(f"Error getting request count: {e}")
+        logger.error(traceback.format_exc())
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
 @router.delete("/api/requests/@{username}", response_model=Dict[str, int])
 async def clear_requests_api(
     username: str,
@@ -212,6 +238,39 @@ async def clear_requests_api(
         logger.error(traceback.format_exc())
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
+@router.delete("/api/requests/@{username}/{request_id}", response_model=Dict[str, Any])
+async def delete_request_api(
+    username: str,
+    request_id: str,
+    request: Request,
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    """
+    Delete a specific webhook request by ID
+    """
+    try:
+        # Get user to confirm existence
+        await get_user_config(db, username)
+        
+        # Delete request
+        result = await delete_webhook_request(db, username, request_id)
+        
+        if result:
+            return {"success": True, "message": "Request deleted successfully"}
+        else:
+            return JSONResponse(
+                content={"success": False, "error": "Request not found"},
+                status_code=404
+            )
+    
+    except HTTPException as e:
+        return JSONResponse(content={"error": e.detail}, status_code=e.status_code)
+    
+    except Exception as e:
+        logger.error(f"Error deleting request: {e}")
+        logger.error(traceback.format_exc())
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
 @router.get("/api/requests/@{username}/export", response_class=StreamingResponse)
 async def export_requests_api(
     username: str,
@@ -220,7 +279,7 @@ async def export_requests_api(
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
     """
-    Export webhook requests to CSV via API
+    Export webhook requests to CSV or JSON via API
     """
     try:
         # Get user to confirm existence
@@ -331,27 +390,9 @@ async def viewer_websocket(
                 await websocket.send_text(json.dumps({"event": "ping"}))
                 
             except WebSocketDisconnect:
-                logger.info(f"Viewer WebSocket disconnected for {username}")
+                logger.error(f"Error in WebSocket polling: {inner_error}")
+                await asyncio.sleep(2)  # Prevent tight error loop.info(f"Viewer WebSocket disconnected for {username}")
                 break
             except Exception as inner_error:
                 logger.error(f"Error in WebSocket polling: {inner_error}")
-                await asyncio.sleep(2)  # Prevent tight error loop
-    
-    except HTTPException as e:
-        logger.error(f"Viewer WebSocket error: {e.detail}")
-        await websocket.close(code=1008, reason=e.detail)
-    
-    except Exception as e:
-        logger.error(f"Unexpected error in viewer WebSocket: {e}")
-        logger.error(traceback.format_exc())
-        try:
-            await websocket.close(code=1011, reason="Internal server error")
-        except:
-            pass
-    
-    finally:
-        # Clean up connection
-        if username in active_connections and websocket in active_connections[username]:
-            active_connections[username].remove(websocket)
-            if not active_connections[username]:
-                del active_connections[username]
+                await asyncio.sleep(2)

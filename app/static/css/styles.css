@@ -267,3 +267,150 @@ textarea {
     background-color: #28a745;
     color: white;
 }
+
+/* Enhancements for the viewer page */
+.stats-card {
+    transition: all 0.3s ease;
+    border-radius: 0.5rem;
+    border: none;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+}
+
+.stats-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+.action-btn {
+    transition: all 0.2s ease;
+    margin-bottom: 0.5rem;
+}
+
+.action-btn:hover {
+    transform: translateY(-2px);
+}
+
+.dropdown-menu {
+    border-radius: 0.5rem;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    border: none;
+    padding: 0.5rem;
+}
+
+.dropdown-item {
+    border-radius: 0.25rem;
+    padding: 0.5rem 1rem;
+}
+
+.dropdown-item:hover {
+    background-color: #f8f9fa;
+}
+
+.request-card {
+    transition: all 0.2s ease;
+    border-left: 4px solid transparent;
+}
+
+.request-card:hover {
+    border-left-color: #007bff;
+}
+
+.request-card.method-GET {
+    border-left-color: #28a745;
+}
+
+.request-card.method-POST {
+    border-left-color: #007bff;
+}
+
+.request-card.method-PUT {
+    border-left-color: #fd7e14;
+}
+
+.request-card.method-DELETE {
+    border-left-color: #dc3545;
+}
+
+.request-card.method-PATCH {
+    border-left-color: #6f42c1;
+}
+
+/* Loading indicator improvements */
+#loadingSpinner {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background-color: rgba(255, 255, 255, 0.8);
+    padding: 1.5rem;
+    border-radius: 0.5rem;
+    z-index: 1000;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+.no-requests-message {
+    text-align: center;
+    padding: 3rem 0;
+    color: #6c757d;
+}
+
+/* Request detail modal enhancements */
+.modal-header {
+    background-color: #f8f9fa;
+    border-bottom: none;
+}
+
+.modal-title {
+    font-weight: 600;
+}
+
+.modal-footer {
+    background-color: #f8f9fa;
+    border-top: none;
+}
+
+/* Pagination enhancements */
+.pagination {
+    margin-bottom: 0;
+}
+
+.page-item .page-link {
+    border-radius: 0.25rem;
+    margin: 0 0.1rem;
+    color: #007bff;
+}
+
+.page-item.active .page-link {
+    background-color: #007bff;
+    border-color: #007bff;
+}
+
+/* Toast enhancements */
+.toast {
+    border: none;
+    border-radius: 0.5rem;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+.toast-header {
+    border-bottom: none;
+    border-top-left-radius: 0.5rem;
+    border-top-right-radius: 0.5rem;
+}
+
+.toast-body {
+    padding: 1rem;
+}
+
+/* Response time indicator colors */
+.response-time-fast {
+    color: #28a745;
+}
+
+.response-time-medium {
+    color: #fd7e14;
+}
+
+.response-time-slow {
+    color: #dc3545;
+}
