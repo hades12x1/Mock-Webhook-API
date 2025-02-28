@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from app.routers import dashboard, webhook, viewer
 
@@ -38,6 +39,10 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 # Setup Jinja2 templates
 templates = Jinja2Templates(directory="app/templates")
+
+# Add custom template globals and filters
+templates.env.globals["current_year"] = datetime.now().year
+
 app.state.templates = templates
 
 # Add CORS middleware

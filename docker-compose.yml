@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  webhook-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017
+      - MONGO_DB=webhook_db
+      - ADMIN_PASSWORD=admin
+      - MAX_REQUESTS_PER_USER=100000
+    depends_on:
+      - mongodb
+    restart: always
+    # Add healthcheck to ensure the service restarts if it fails
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  mongodb:
+    image: mongo:5.0
+    environment:
+      - MONGO_DATA_DIR=/data/db
+    # Not mounting volumes to external storage as per requirement
+    command: mongod --quiet --logpath /dev/null
+    restart: always
+    # Add healthcheck for MongoDB
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongo localhost:27017/test --quiet
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

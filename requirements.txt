@@ -9,4 +9,5 @@ pymongo==4.6.1
 python-dotenv==1.0.0
 websockets==12.0
 pandas==2.1.4
-uuid==1.30
+# uuid is a built-in module in Python, no need to specify it
+# removed uuid==1.30

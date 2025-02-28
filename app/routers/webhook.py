@@ -7,6 +7,7 @@ from typing import Dict, Any, List
 
 from app.services.webhook import get_user_config, save_webhook_request, simulate_processing_time
 
+# Define the router - this was missing or incorrectly defined
 router = APIRouter()
 
 # Keep track of active websocket connections for realtime updates
