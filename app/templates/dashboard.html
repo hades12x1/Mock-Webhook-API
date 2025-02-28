@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Webhook Mock API{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">
+                    <i class="fas fa-plus-circle me-2"></i>Create a New Webhook
+                </h4>
+            </div>
+            <div class="card-body">
+                <form id="webhookForm" method="POST" action="/create-webhook">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">Username</label>
+                        <div class="input-group">
+                            <span class="input-group-text">@</span>
+                            <input type="text" class="form-control" id="username" name="username" 
+                                  placeholder="your-username" value="{{ username | default('') }}" required>
+                            <button class="btn btn-outline-secondary" type="button" id="checkUsername">
+                                Check Availability
+                            </button>
+                        </div>
+                        <div id="usernameHelp" class="form-text">
+                            Your webhook URL will be: https://{{ domain }}/api/@<span id="usernamePreview">your-username</span>
+                        </div>
+                        <div id="usernameAvailability"></div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="defaultResponse" class="form-label">Default Response</label>
+                        <textarea class="form-control" id="defaultResponse" name="default_response" rows="5" 
+                                 placeholder='{
+  "status": "success",
+  "message": "Your custom response"
+}'>{{ default_response | default('{"status": "success", "message": "Default response"}') }}</textarea>
+                        <div class="form-text">The JSON response to return when your webhook is called.</div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="responseTimeMin" class="form-label">Response Time Min (ms)</label>
+                            <input type="number" class="form-control" id="responseTimeMin" name="response_time_min" 
+                                  value="{{ response_time_min | default(0) }}" min="0" max="10000">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="responseTimeMax" class="form-label">Response Time Max (ms)</label>
+                            <input type="number" class="form-control" id="responseTimeMax" name="response_time_max" 
+                                  value="{{ response_time_max | default(1000) }}" min="0" max="10000">
+                        </div>
+                        <div class="form-text">Simulate processing delay between min and max values.</div>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-lg" id="createWebhookBtn">
+                            <i class="fas fa-play me-2"></i>Create Webhook
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card shadow mt-4">
+            <div class="card-header bg-info text-white">
+                <h4 class="mb-0">
+                    <i class="fas fa-info-circle me-2"></i>How It Works
+                </h4>
+            </div>
+            <div class="card-body">
+                <h5>1. Create a webhook with your username</h5>
+                <p>Choose a unique username and set the default response and response time.</p>
+                
+                <h5>2. Use your webhook URL</h5>
+                <p>Send HTTP requests to your webhook URL: <code>https://{{ domain }}/api/@{username}</code></p>
+                <p>Supports all HTTP methods: GET, POST, PUT, DELETE, etc.</p>
+                
+                <h5>3. View request history</h5>
+                <p>See all requests made to your webhook in real-time.</p>
+                <p>Analyze request details including headers, body, and response times.</p>
+                
+                <h5>4. Export data</h5>
+                <p>Export request history to CSV for further analysis.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    $(document).ready(function() {
+        // Update username preview
+        $('#username').on('input', function() {
+            const username = $(this).val() || 'your-username';
+            $('#usernamePreview').text(username);
+        });
+        
+        // Check username availability
+        $('#checkUsername').on('click', function() {
+            const username = $('#username').val();
+            if (!username) {
+                $('#usernameAvailability').html('<div class="alert alert-warning mt-2">Please enter a username</div>');
+                return;
+            }
+            
+            // Show loading
+            $('#usernameAvailability').html('<div class="text-muted mt-2">Checking availability...</div>');
+            
+            // Check availability
+            $.ajax({
+                url: `/api/users/check/${username}`,
+                method: 'GET',
+                success: function(data) {
+                    if (data.available) {
+                        $('#usernameAvailability').html('<div class="alert alert-success mt-2">Username is available!</div>');
+                    } else {
+                        $('#usernameAvailability').html('<div class="alert alert-danger mt-2">Username is already taken.</div>');
+                    }
+                },
+                error: function(error) {
+                    $('#usernameAvailability').html('<div class="alert alert-danger mt-2">Error checking username.</div>');
+                }
+            });
+        });
+        
+        // Validate form
+        $('#webhookForm').on('submit', function(e) {
+            const username = $('#username').val();
+            if (!username || !username.match(/^[a-zA-Z0-9]+$/)) {
+                e.preventDefault();
+                $('#usernameAvailability').html('<div class="alert alert-danger mt-2">Username must be alphanumeric.</div>');
+                return false;
+            }
+            
+            // Validate JSON
+            try {
+                JSON.parse($('#defaultResponse').val());
+            } catch (error) {
+                e.preventDefault();
+                Swal.fire({
+                    title: 'Invalid JSON',
+                    text: 'Please enter valid JSON for the default response.',
+                    icon: 'error'
+                });
+                return false;
+            }
+            
+            // Validate response times
+            const minTime = parseInt($('#responseTimeMin').val());
+            const maxTime = parseInt($('#responseTimeMax').val());
+            
+            if (isNaN(minTime) || isNaN(maxTime) || minTime < 0 || maxTime < 0 || minTime > maxTime) {
+                e.preventDefault();
+                Swal.fire({
+                    title: 'Invalid Response Times',
+                    text: 'Min time must be less than or equal to max time, and both must be non-negative.',
+                    icon: 'error'
+                });
+                return false;
+            }
+            
+            return true;
+        });
+    });
+</script>
+{% endblock %}

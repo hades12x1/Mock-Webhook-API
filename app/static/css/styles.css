@@ -1,0 +1,131 @@
+/* General Styles */
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f8f9fa;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.container {
+    flex: 1;
+}
+
+/* Card styles */
+.card {
+    border-radius: 0.5rem;
+    overflow: hidden;
+    margin-bottom: 1.5rem;
+    border: none;
+}
+
+.card-header {
+    border-bottom: none;
+    padding: 1rem;
+}
+
+.card-body {
+    padding: 1.25rem;
+}
+
+/* Shadows */
+.shadow {
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+}
+
+.shadow-sm {
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075) !important;
+}
+
+/* Code blocks */
+pre {
+    background-color: #f8f9fa;
+    border-radius: 0.25rem;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.code-block {
+    max-height: 200px;
+    overflow: auto;
+    font-size: 0.875rem;
+    background-color: #f8f9fa;
+    border-radius: 0.25rem;
+}
+
+/* HTTP method badges */
+.badge {
+    font-weight: 500;
+    padding: 0.4em 0.6em;
+    border-radius: 0.25rem;
+    color: white;
+}
+
+/* Animations */
+.new-request {
+    animation: highlight 3s;
+}
+
+@keyframes highlight {
+    0% { background-color: rgba(0, 123, 255, 0.1); }
+    100% { background-color: transparent; }
+}
+
+/* Forms */
+.form-control:focus {
+    border-color: #80bdff;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+textarea {
+    font-family: monospace;
+}
+
+/* Footer */
+.footer {
+    margin-top: auto;
+    background-color: #f8f9fa;
+    border-top: 1px solid #e9ecef;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .card-header h4 {
+        font-size: 1.25rem;
+    }
+    
+    pre {
+        font-size: 0.75rem;
+    }
+}
+
+/* Loading spinner */
+#loadingSpinner {
+    margin: 2rem 0;
+}
+
+/* Toast notifications */
+.toast-container {
+    z-index: 1050;
+}
+
+/* Modal styles */
+.modal-xl {
+    max-width: 90%;
+}
+
+.modal-body {
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+/* Tab navigation */
+.nav-tabs .nav-link {
+    color: #495057;
+    border-radius: 0.25rem 0.25rem 0 0;
+}
+
+.nav-tabs .nav-link.active {
+    font-weight: 500;
+    border-color: #dee2e6 #dee2e6 #fff;
+}
